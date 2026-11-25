@@ -146,6 +146,10 @@ def cmd_run(keys: list[str], dry: bool) -> int:
 
 
 def main() -> int:
+    # 打包成 exe 双击时，当前目录可能是桌面，先切到程序目录再动相对路径
+    paths.chdir_app()
+    # 首次运行把 config.yaml / 模板 / 录制任务铺到可写目录（命令行模式也要）
+    paths.ensure_layout()
     ap = argparse.ArgumentParser(description="双穹幻想 Burst 网页版助手")
     ap.add_argument("--probe", action="store_true", help="环境自检")
     ap.add_argument("--shot", action="store_true", help="存一张当前画面")

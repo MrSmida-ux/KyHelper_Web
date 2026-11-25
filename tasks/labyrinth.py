@@ -94,7 +94,18 @@ NEEDS = [
 # 原来「迷宫挑战-跳过」是一个独立的录制任务；游戏每天只能跑一次迷宫，
 # 两个任务并列会让人不知道该勾哪个，所以合并成同一个任务的「方式」选项。
 # 录制步骤原样保留在 _embedded 子目录（registry 只扫 recipes/*.yaml，看不到它）。
-SKIP_RECIPE = Path(__file__).resolve().parent / "recipes" / "_embedded" / "迷宫挑战_跳过.yaml"
+def _skip_recipe_path() -> Path:
+    """优先用可写目录里的副本（exe 首次运行会复制过去），退回打包内的。"""
+    from core import paths
+    cands = [paths.app_dir() / "tasks" / "recipes" / "_embedded" / "迷宫挑战_跳过.yaml",
+             Path(__file__).resolve().parent / "recipes" / "_embedded" / "迷宫挑战_跳过.yaml"]
+    for c in cands:
+        if c.exists():
+            return c
+    return cands[-1]
+
+
+SKIP_RECIPE = _skip_recipe_path()
 # 文件被人删了也别让整块导入失败：退回按名字检查模板，运行时再报找不到步骤
 SKIP_TPL_FALLBACK = [f"rec_迷宫挑战_{i:02d}" for i in range(1, 8)]
 _SKIP_STEPS_CACHE: list | None = None
@@ -312,10 +323,20 @@ def find_target_gate(dev: Device, target: str, rerolls: int,
 _TPL_CACHE: dict[str, object] = {}
 
 
+def _tpl_path(name: str) -> Path:
+    """模板文件路径：程序目录优先（用户可能改过），再退回打包内资源。"""
+    from core import paths
+    for base in (paths.app_dir(), paths.res_dir()):
+        p = base / "assets" / "templates" / f"{name}.png"
+        if p.exists():
+            return p
+    return paths.app_dir() / "assets" / "templates" / f"{name}.png"
+
+
 def _tpl_gray(name: str):
     """读模板灰度图（带缓存）。"""
     if name not in _TPL_CACHE:
-        _TPL_CACHE[name] = cv2.imread(f"assets/templates/{name}.png", 0)
+        _TPL_CACHE[name] = cv2.imread(str(_tpl_path(name)), 0)
     return _TPL_CACHE[name]
 
 
@@ -373,7 +394,7 @@ def _pick_buff(dev: Device, buff_type: str) -> None:
     g = cv2.cvtColor(dev.screen(), cv2.COLOR_BGR2GRAY)
     tpls = {}
     for k in ("physical", "magic"):
-        tpls[k] = cv2.imread(f"assets/templates/maze_buff_{k}.png", 0)
+        tpls[k] = cv2.imread(str(_tpl_path(f"maze_buff_{k}")), 0)
     chosen = None
     for cy in (350, 532, 714, 896):
         x1, y1 = _xy(dev, 805, cy - 24)

@@ -34,8 +34,34 @@ def config_path(root: Path | None = None) -> Path:
     return (root or app_dir()) / "config.yaml"
 
 
+def chdir_app() -> None:
+    """把工作目录切到 app_dir。
+
+    有些地方（如 tasks/labyrinth.py）用相对路径读 assets/templates，源码运行时
+    当前目录就是仓库根，没问题；双击 exe 时当前目录可能是桌面或 C:\\Windows，
+    不切就会找不到模板。统一在启动时切一次。
+    """
+    try:
+        os.chdir(app_dir())
+    except OSError:
+        pass
+
+
+def _copy_missing(src: Path, dst: Path, pattern: str = "*") -> None:
+    """把 src 下匹配 pattern 的文件按原相对路径补到 dst（已存在的不动，不覆盖用户改动）。"""
+    if not src.exists():
+        return
+    for p in src.rglob(pattern):
+        if not p.is_file():
+            continue
+        t = dst / p.relative_to(src)
+        if not t.exists():
+            t.parent.mkdir(parents=True, exist_ok=True)
+            t.write_bytes(p.read_bytes())
+
+
 def ensure_layout(root: Path | None = None) -> None:
-    """首次运行把目录建好，并把默认模板复制到可写目录（用户裁的新模板要能落地）。"""
+    """首次运行把目录建好，并把内置资源复制到可写目录（用户裁的新模板要能落地）。"""
     r = root or app_dir()
     for d in ("logs", "logs/shots", "logs/fails", "tasks/recipes", "chrome-data"):
         (r / d).mkdir(parents=True, exist_ok=True)
@@ -52,6 +78,24 @@ def ensure_layout(root: Path | None = None) -> None:
             tj = dst / j.name
             if j.exists() and not tj.exists():
                 tj.write_bytes(j.read_bytes())
+
+    # 内置配置：第一次运行放出来一份，用户改坏了删掉还会再生成
+    cfg = r / "config.yaml"
+    src_cfg = res_dir() / "config.yaml"
+    if not cfg.exists() and src_cfg.exists() and src_cfg.resolve() != cfg.resolve():
+        cfg.write_bytes(src_cfg.read_bytes())
+
+    # 录制的任务 yaml（含 _embedded）：exe 版没有仓库目录，得放一份到可写目录
+    src_rec = res_dir() / "tasks" / "recipes"
+    if src_rec.exists() and src_rec.resolve() != (r / "tasks" / "recipes").resolve():
+        _copy_missing(src_rec, r / "tasks" / "recipes", "*.yaml")
+
+    # tasks/ 下的 order/selection/options.json 是用户配置，首次给个默认的
+    for name in ("order.json", "selection.json", "options.json"):
+        s = res_dir() / "tasks" / name
+        t = r / "tasks" / name
+        if s.exists() and not t.exists():
+            t.write_bytes(s.read_bytes())
 
 
 def find_chrome() -> str:

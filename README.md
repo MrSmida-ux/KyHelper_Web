@@ -8,6 +8,11 @@
 - 依赖：Chrome + opencv + numpy + PyYAML
 - 任务：13 个内置 + 8 个录制，354 张模板
 
+> **不想装 Python？** 下 [**v1.0.0 免安装版**](https://github.com/MrSmida-ux/KyHelper_Web/releases/latest)
+> （Windows x64，zip 约 71 MB）：解压后双击 `KyHelper_Web.exe` 就能跑，
+> 运行时和 opencv/numpy 都打包在 `_internal/` 里，只需要本机装有 Chrome 或 Edge。
+> 想改代码或自己加模板，再按下面的源码方式跑。
+
 ---
 
 ## 一、快速开始
@@ -270,7 +275,24 @@ assets/templates/ 354 张模板 + 同名 .json（记基准分辨率和裁切位�
 web/              控制台前端
 chrome-data/      工具自己那份 Chrome 用户目录（登录态在这，不进 git）
 logs/             运行日志、截图、失败现场（不进 git）
+build.py          打包成免 Python 的 exe（PyInstaller）
+release/          build.py 的产物（不进 git）
 ```
+
+### 打包成 exe
+
+```bash
+python -m venv .venv-build
+.venv-build\Scripts\pip install opencv-python==4.14.0.94 numpy PyYAML pyinstaller
+python build.py --zip        # → release/KyHelper_Web/ 和 release/KyHelper_Web-<版本>-win64.zip
+```
+
+产物是**目录版**（`exe` + `_internal/` + 资源），不是单文件：单文件每次启动都要把
+100 MB 运行时解到临时目录，首次要等 5~10 秒，目录版秒开，杀软误报也少。
+
+打进去的资源和源码结构对应：`assets/templates`、`web`、`tasks/recipes`、`config.yaml`。
+程序跑起来时 `core/paths.py` 把它们复制到 exe 同级目录一份（已存在的文件不覆盖，
+用户改过的模板能留住）；内置的那份留在 `_internal/` 当兜底。
 
 ---
 
