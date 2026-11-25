@@ -1,0 +1,59 @@
+key: 竞技场快速战斗
+name: 竞技场1v1快速战斗
+desc: GUI 录制 · 10 步
+steps:
+- home
+- tap_img:
+    target: rec_竞技场快速战斗_01
+    timeout: 6
+    at:
+    - 1292
+    - 1357
+- tap_img:
+    target: rec_竞技场快速战斗_02
+    timeout: 6
+    at:
+    - 780
+    - 1115
+- tap_img:
+    target: rec_竞技场快速战斗_03
+    timeout: 6
+    at:
+    - 900
+    - 703
+- tap_img:
+    target: rec_竞技场快速战斗_04
+    timeout: 6
+    at:
+    - 827
+    - 821
+- tap_img:
+    target: rec_竞技场快速战斗_05
+    timeout: 6
+    at:
+    - 1250
+    - 1068
+- tap_img:
+    target: rec_竞技场快速战斗_06
+    timeout: 6
+    at:
+    - 742
+    - 1127
+- tap_img:
+    target: rec_竞技场快速战斗_07
+    timeout: 6
+    at:
+    - 1715
+    - 677
+- tap_img:
+    target: rec_竞技场快速战斗_08
+    timeout: 6
+    at:
+    - 1514
+    - 1047
+- tap_img:
+    target: rec_竞技场快速战斗_09
+    timeout: 6
+    at:
+    - 85
+    - 78

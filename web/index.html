@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日常助手</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">◈</span>
+    <div class="brand-text">
+      <div class="title">日常助手</div>
+      <div class="sub" id="gameName">未设置游戏</div>
+    </div>
+  </div>
+  <div class="status">
+    <span class="dot" id="dot"></span>
+    <span id="connText">连接中…</span>
+    <span class="sep">·</span>
+    <span id="screenSize" class="mono">—</span>
+    <span class="sep">·</span>
+    <button id="btnFps" class="fps-btn mono" title="点击切换帧率模式：自动 → 60 → 省电">
+      <span id="fps">—</span><span id="fpsModeTag" class="fps-tag">自动</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- 左侧：任务列表 / 录制面板 -->
+  <aside class="side">
+    <!-- 任务列表 -->
+    <div id="viewTasks" class="view">
+      <div class="side-head">
+        <span>任务 <em class="tip">拖序号调顺序</em></span>
+        <div class="head-acts">
+          <button class="link" id="btnOrder">排序</button>
+          <button class="link" id="btnAll">全选</button>
+        </div>
+      </div>
+      <ul id="taskList" class="task-list"></ul>
+      <div class="side-foot">
+        <button class="btn ghost block" id="btnNewTask">＋ 新建任务（录制）</button>
+      </div>
+    </div>
+
+    <!-- 录制面板 -->
+    <div id="viewRec" class="view" hidden>
+      <div class="side-head">
+        <span>录制新任务</span>
+        <button class="link" id="btnRecQuit">放弃</button>
+      </div>
+      <div class="rec-form">
+        <label class="field">
+          <span>任务名</span>
+          <input id="recName" type="text" placeholder="例如：领取邮件" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>标识</span>
+          <input id="recKey" type="text" placeholder="英文，如 mail" autocomplete="off">
+        </label>
+      </div>
+
+      <div class="rec-hint" id="recHint">
+        右边画面上点一下，就会记下这一步。点到哪就记到哪，顺序错了可以删。
+      </div>
+
+      <div class="steps-head">
+        <span>步骤 <b id="stepCount">0</b></span>
+        <button class="link" id="btnUndo">撤销上一步</button>
+      </div>
+      <ol id="stepList" class="step-list"></ol>
+
+      <div class="rec-tools">
+        <button class="chip" data-op="home">回主页</button>
+        <button class="chip" data-op="back">返回键</button>
+        <button class="chip" data-op="wait_stable">等加载</button>
+        <button class="chip" data-op="scroll">下滑</button>
+        <button class="chip" data-op="sleep">停 1 秒</button>
+      </div>
+
+      <div class="side-foot">
+        <button class="btn primary block" id="btnRecSave" disabled>保存任务</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 右侧：画面 + 操作条 + 日志 -->
+  <section class="stage">
+    <div class="toolbar">
+      <button class="btn primary" id="btnRun">▶ 执行勾选</button>
+      <button class="btn danger" id="btnStop" disabled>■ 停止</button>
+      <span class="grow"></span>
+      <button class="btn ghost" id="btnPreview" title="开关画面预览（游戏就在旁边的浏览器窗口里）">画面 关</button>
+      <button class="btn ghost" id="btnShot">截图</button>
+      <button class="btn ghost" id="btnReload" title="重新扫描任务清单">刷新任务</button>
+      <button class="btn ghost" id="btnRealign" title="重新对齐画面：把游戏画面放到正中铺满">重新对齐</button>
+      <button class="btn ghost" id="btnReset" title="还原画面（黑屏急救）：撤掉位移和缩放，回到 1:1 居中。对齐算歪把画面顶出窗口、看到整块黑屏时点它，不刷新页面、不用重新登录。">还原画面</button>
+      <button class="btn ghost" id="btnZoom" title="把网页缩放拨到 100%（系统级：会发真实的 Ctrl+= / Ctrl+0，游戏窗口会抢到前台约 1~2 秒）。画面「显示不全」时点它。">缩放 100%</button>
+      <button class="btn ghost" id="btnGameReload" title="只重进账号页/游戏画面，不用重新登录站点（登录报错/画面卡住时用）">重载游戏</button>
+      <button class="btn ghost" id="btnLogin" title="粘贴 erolabsjwt 直接登录，绕开登录页和人机验证">登录令牌</button>
+      <button class="btn ghost" id="btnBorrow" title="借用本机 Chrome 的登录态：把平时那个浏览器的 cookie 拷进工具自己的 profile，然后重开工具浏览器（免登录、免人机验证）">借用登录态</button>
+    </div>
+
+    <div class="screen-wrap" id="screenWrap">
+      <img id="screen" alt="">
+      <div class="screen-tip" id="screenTip">等待画面…</div>
+    </div>
+
+    <div class="vresize" id="vresize"></div>
+
+    <div class="logbar" id="logBar">
+      <div class="log-head">
+        <span>运行日志</span>
+        <span class="summary" id="summary"></span>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+</main>
+
+<div id="orderDlg" class="dlg" hidden>
+  <div class="dlg-box">
+    <div class="dlg-head">
+      <span>调整执行顺序</span>
+      <button class="del" id="orderClose" title="关闭">×</button>
+    </div>
+    <div class="dlg-hint">
+      一行一个任务，从上到下就是执行顺序。没写的任务会自动排到最后。<br>
+      也可以直接改 <code id="orderPath">tasks/order.json</code>，改完点「刷新任务」。
+    </div>
+    <textarea id="orderText" spellcheck="false" autocomplete="off"></textarea>
+    <div class="dlg-foot">
+      <button class="link" id="orderReveal">打开文件所在位置</button>
+      <span class="grow"></span>
+      <button class="btn ghost" id="orderCancel">取消</button>
+      <button class="btn primary" id="orderSave">保存顺序</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

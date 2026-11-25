@@ -1,0 +1,59 @@
+key: 竞技场3v3快速战斗
+name: 竞技场3v3快速战斗
+desc: GUI 录制 · 10 步
+steps:
+- home
+- tap_img:
+    target: rec_竞技场3v3快速战斗_02
+    timeout: 6
+    at:
+    - 1288
+    - 1365
+- tap_img:
+    target: rec_竞技场3v3快速战斗_03
+    timeout: 6
+    at:
+    - 712
+    - 1047
+- tap_img:
+    target: rec_竞技场3v3快速战斗_04
+    timeout: 6
+    at:
+    - 1634
+    - 694
+- tap_img:
+    target: rec_竞技场3v3快速战斗_05
+    timeout: 6
+    at:
+    - 780
+    - 889
+- tap_img:
+    target: rec_竞技场3v3快速战斗_06
+    timeout: 6
+    at:
+    - 1292
+    - 1051
+- tap_img:
+    target: rec_竞技场3v3快速战斗_07
+    timeout: 6
+    at:
+    - 716
+    - 1157
+- tap_img:
+    target: rec_竞技场3v3快速战斗_08
+    timeout: 6
+    at:
+    - 1681
+    - 669
+- tap_img:
+    target: rec_竞技场3v3快速战斗_09
+    timeout: 6
+    at:
+    - 1518
+    - 1064
+- tap_img:
+    target: rec_竞技场3v3快速战斗_10
+    timeout: 6
+    at:
+    - 85
+    - 82

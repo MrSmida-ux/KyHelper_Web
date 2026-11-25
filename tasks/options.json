@@ -1,0 +1,74 @@
+{
+  "rescue_aid": {
+    "elements": [
+      "fire",
+      "water",
+      "wind",
+      "holy",
+      "dark",
+      "mind"
+    ],
+    "difficulties": [
+      "lunatic"
+    ],
+    "times": [
+      "1"
+    ]
+  },
+  "rescue_start": {
+    "elements": [
+      "wind"
+    ],
+    "difficulties": [
+      "lunatic"
+    ],
+    "rounds": [
+      "1"
+    ]
+  },
+  "ruins": {
+    "ruins": [
+      "crystal"
+    ],
+    "attrs": [
+      "water"
+    ],
+    "abils": [
+      "patk"
+    ],
+    "diffs": [
+      "chao"
+    ],
+    "sweeps": [
+      "1"
+    ]
+  },
+  "main_story": {
+    "diffs": [
+      "hard"
+    ],
+    "chapter": [
+      "16-3-3"
+    ],
+    "sweeps": [
+      "1"
+    ]
+  },
+  "labyrinth": {
+    "modes": [
+      "manual"
+    ],
+    "kings": [
+      "quan"
+    ],
+    "diffs": [
+      "hard"
+    ],
+    "buffs": [
+      "physical"
+    ],
+    "rerolls": [
+      "10"
+    ]
+  }
+}

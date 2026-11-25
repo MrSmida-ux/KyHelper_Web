@@ -1,0 +1,52 @@
+key: paladin_gift
+name: 圣骑士送羁绊礼物
+desc: 主页 → 圣骑士 → 点带感叹号的角色 → 羁绊 → 最左礼物 → MIN → 加1 → 确定 → 确定
+steps:
+- note: 回主页
+- home
+- tap_img:
+    target: tab_paladin
+    timeout: 8
+- note: 等列表加载出来，找带感叹号（有羁绊礼物可送）的角色
+- tap_img:
+    target: gift_badge
+    timeout: 16
+    threshold: 0.9
+    # 只在前三行卡片里找：最下面一行被导航栏挡住，点不进去
+    region: [440, 260, 2400, 1080]
+    # 感叹号在卡片右上角，往左下偏一下才是卡片中心
+    offset: [-120, 120]
+- wait_stable: 8
+- if:
+    target: gift_badge
+    threshold: 0.88
+    then:
+    - note: 羁绊页签上有感叹号，可以送
+    - tap_img:
+        target: tab_bond
+        threshold: 0.95
+        timeout: 4
+        optional: true
+    - wait_stable: 4
+    - tap_img:
+        target: gift_item_candy
+        timeout: 8
+    - wait: gift_btn_min
+      timeout: 10
+    - note: 数量调到 1（MIN 是 0，再点一次加号）
+    - tap_img: gift_btn_min
+    - sleep: 0.5
+    - tap_img: gift_btn_plus
+    - sleep: 0.4
+    - tap_img: gift_btn_ok
+    - wait: gift_result_ok
+      threshold: 0.9
+    - note: 已送出 1 个糖果，关掉「羁绊+1」
+    - tap_img:
+        target: gift_result_ok
+        threshold: 0.92
+    - wait: gift_item_candy
+      timeout: 8
+    - note: 回到礼物列表，羁绊 +1 完成
+    else:
+    - note: 这个角色的羁绊页签没有感叹号，本轮不送

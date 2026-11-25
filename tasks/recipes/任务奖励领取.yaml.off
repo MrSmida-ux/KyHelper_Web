@@ -1,0 +1,42 @@
+key: 任务奖励领取
+name: 每日任务奖励领取
+desc: GUI 录制 · 8 步
+steps:
+- home
+- tap_img:
+    target: rec_任务奖励领取_01
+    timeout: 6
+    at:
+    - 1898
+    - 1153
+- tap_img:
+    target: rec_任务奖励领取_02
+    timeout: 6
+    at:
+    - 2274
+    - 1136
+- tap_img:
+    target: rec_任务奖励领取_03
+    timeout: 6
+    at:
+    - 1275
+    - 1318
+- tap_img:
+    target: rec_任务奖励领取_04
+    timeout: 6
+    at:
+    - 2240
+    - 1127
+- tap_img:
+    target: rec_任务奖励领取_05
+    timeout: 6
+    at:
+    - 1314
+    - 1289
+- tap_img:
+    target: rec_任务奖励领取_06
+    timeout: 6
+    at:
+    - 1719
+    - 99
+- home

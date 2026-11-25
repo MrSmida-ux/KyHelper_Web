@@ -1,0 +1,55 @@
+# 【内置片段 · 不单独出现在任务列表】
+# 这是 GUI 录制的「迷宫挑战·跳过」流程，现在由 tasks/labyrinth.py 调用，
+# 作为合并后任务「迷宫挑战」的 `方式=跳过` 分支（见 job_labyrinth）。
+#
+# 放在 recipes/_embedded/ 子目录，是为了让 registry.load_jobs 的 glob("*.yaml")
+# 扫不到它 —— 否则界面上会出现两个迷宫任务，而游戏每天只允许跑一次。
+# 要重新录制这段：把新 yaml 覆盖到这里即可，步骤/名字随意，模板名保持一致就行。
+key: 迷宫挑战
+name: 迷宫挑战-跳过
+desc: GUI 录制 · 9 步（主页→冒险→特殊关卡→迷宫→难度→SKIP→确认→回主页）
+steps:
+- home
+- tap_img:
+    target: rec_迷宫挑战_01
+    timeout: 6
+    at:
+    - 1245
+    - 1357
+- tap_img:
+    target: rec_迷宫挑战_02
+    timeout: 6
+    at:
+    - 665
+    - 473
+- tap_img:
+    target: rec_迷宫挑战_03
+    timeout: 6
+    at:
+    - 840
+    - 588
+- tap_img:
+    target: rec_迷宫挑战_04
+    timeout: 6
+    at:
+    - 2180
+    - 201
+- tap_img:
+    target: rec_迷宫挑战_05
+    timeout: 6
+    at:
+    - 524
+    - 915
+- tap_img:
+    target: rec_迷宫挑战_06
+    timeout: 6
+    at:
+    - 1493
+    - 1047
+- tap_img:
+    target: rec_迷宫挑战_07
+    timeout: 6
+    at:
+    - 1267
+    - 1289
+- home

@@ -1,0 +1,39 @@
+key: mail
+name: 领取信件
+desc: 主页 → 信件 → 全部领取 → 确认 → 左上角关闭
+steps:
+  - home
+  # 信件不是一直有东西可领。图标右上角有红色数字角标才说明有未领取的信件，
+  # 没有就直接跳过 —— 空点进去时「全部领取」是发暗的，点了也没用。
+  - if_red:
+      region: [2444, 1018, 2500, 1074]     # 信件图标右上角角标的位置
+      min: 0.08                             # 有角标约 25%，没有是 0%
+      then:
+        - tap_img: icon_mail
+        - wait_stable: 5
+        # 弹窗底部「全部领取」。它和下面确认弹窗里的同名按钮长得一样，
+        # 所以确认那一步必须限定区域，否则会点回外面这个。
+        - tap_img:
+            target: btn_mail_claim
+            timeout: 8
+        - tap_img:
+            target: btn_mail_confirm
+            region: [1270, 1050, 1710, 1210]
+            threshold: 0.95
+            timeout: 10
+        # 领取结果弹窗（「已领取下列物品」）
+        - tap_img:
+            target: btn_mail_reward_ok
+            threshold: 0.92
+            timeout: 10
+        - wait_stable: 4
+        # 左上角 × 关掉信件弹窗。万一这一步没成（比如游戏版本变了），
+        # 下面的 home 还能靠点「首页」/返回键兜回来，不至于卡在弹窗里。
+        - tap_img:
+            target: btn_mail_close
+            optional: true
+        - wait_stable: 4
+        - home
+        - note: 信件已领取
+      else:
+        - note: 信件图标没有红点，今天没东西可领，跳过

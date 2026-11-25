@@ -1,0 +1,24 @@
+key: 同盟捐拜
+name: 同盟捐拜
+desc: GUI 录制 · 5 步
+steps:
+- home
+- tap_img:
+    target: rec_同盟捐拜_01
+    timeout: 6
+    at:
+    - 2073
+    - 1110
+- tap_img:
+    target: rec_同盟捐拜_02
+    timeout: 6
+    at:
+    - 942
+    - 1157
+- tap_img:
+    target: rec_同盟捐拜_03
+    timeout: 6
+    at:
+    - 1267
+    - 1284
+- home

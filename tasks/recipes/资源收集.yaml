@@ -1,0 +1,59 @@
+key: 资源收集
+name: 资源收集
+desc: GUI 录制 · 10 步
+steps:
+- home
+- tap_img:
+    target: rec_资源收集_02
+    timeout: 6
+    at:
+    - 1288
+    - 1352
+- tap_img:
+    target: rec_资源收集_03
+    timeout: 6
+    at:
+    - 1830
+    - 1034
+- tap_img:
+    target: rec_资源收集_04
+    timeout: 6
+    at:
+    - 1083
+    - 953
+- tap_img:
+    target: rec_资源收集_05
+    timeout: 6
+    at:
+    - 1506
+    - 1068
+- tap_img:
+    target: rec_资源收集_06
+    timeout: 6
+    at:
+    - 1254
+    - 1301
+- tap_img:
+    target: rec_资源收集_07
+    timeout: 6
+    at:
+    - 1625
+    - 214
+- tap_img:
+    target: rec_资源收集_08
+    timeout: 6
+    at:
+    - 1105
+    - 962
+- tap_img:
+    target: rec_资源收集_09
+    timeout: 6
+    at:
+    - 1540
+    - 1047
+- tap_img:
+    target: rec_资源收集_10
+    timeout: 6
+    at:
+    - 1275
+    - 1310

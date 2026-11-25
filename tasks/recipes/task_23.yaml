@@ -1,0 +1,52 @@
+key: task_23
+name: 游戏登录
+desc: GUI 录制 · 8 步
+steps:
+- tap_img:
+    target: rec_task_23_01
+    timeout: 6
+    at:
+    - 1344
+    - 1006
+- tap_img:
+    target: rec_task_23_02
+    timeout: 6
+    at:
+    - 1369
+    - 1020
+- tap_img:
+    target: rec_task_23_03
+    timeout: 6
+    at:
+    - 1369
+    - 1020
+- tap_img:
+    target: rec_task_23_04
+    timeout: 6
+    at:
+    - 1369
+    - 1020
+- tap_img:
+    target: rec_task_23_05
+    timeout: 6
+    at:
+    - 1271
+    - 1285
+- tap_img:
+    target: rec_task_23_06
+    timeout: 6
+    at:
+    - 1271
+    - 1285
+- tap_img:
+    target: rec_task_23_07
+    timeout: 6
+    at:
+    - 1271
+    - 1285
+- tap_img:
+    target: rec_task_23_08
+    timeout: 6
+    at:
+    - 1271
+    - 1285

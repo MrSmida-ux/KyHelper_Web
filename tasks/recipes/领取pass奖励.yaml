@@ -1,0 +1,17 @@
+key: 领取pass奖励
+name: 领取PASS奖励
+desc: GUI 录制 · 3 步
+steps:
+- home
+- tap_img:
+    target: rec_领取pass奖励_01
+    timeout: 6
+    at:
+    - 174
+    - 711
+- tap_img:
+    target: rec_领取pass奖励_02
+    timeout: 6
+    at:
+    - 1301
+    - 1297

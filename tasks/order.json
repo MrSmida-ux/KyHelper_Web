@@ -1,0 +1,26 @@
+{
+  "keys": [
+    "zoom_100",
+    "task_23",
+    "stamina",
+    "dispatch",
+    "同盟捐拜",
+    "market_free",
+    "free_summon",
+    "paladin_gift",
+    "main_story",
+    "ruins",
+    "竞技场3v3快速战斗",
+    "竞技场快速战斗",
+    "资源收集",
+    "labyrinth",
+    "yicezhan",
+    "rescue_aid",
+    "rescue_start",
+    "自动周回_261125",
+    "领取pass奖励",
+    "任务奖励领取",
+    "mail"
+  ],
+  "_hint": "改这个文件就能排序：keys 里从上到下就是执行顺序，可以写任务 key，也可以直接写界面上的任务名；没写的任务自动排在最后。改完在界面上点「刷新任务」生效。"
+}

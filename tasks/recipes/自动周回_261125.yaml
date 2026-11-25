@@ -1,0 +1,65 @@
+key: 自动周回_261125
+name: 自动周回-261125
+desc: GUI 录制 · 11 步
+steps:
+- home
+- tap_img:
+    target: rec_自动周回_261125_01
+    timeout: 6
+    at:
+    - 1260
+    - 1367
+- tap_img:
+    target: rec_自动周回_261125_02
+    timeout: 6
+    at:
+    - 2165
+    - 866
+- tap_img:
+    target: rec_自动周回_261125_04
+    timeout: 6
+    at:
+    - 1255
+    - 571
+- tap_img:
+    target: rec_自动周回_261125_05
+    timeout: 6
+    at:
+    - 1626
+    - 725
+- tap_img:
+    target: rec_自动周回_261125_06
+    timeout: 6
+    at:
+    - 1814
+    - 1132
+- tap_img:
+    target: rec_自动周回_261125_07
+    timeout: 6
+    at:
+    - 1907
+    - 869
+- tap_img:
+    target: rec_自动周回_261125_08
+    timeout: 6
+    at:
+    - 1486
+    - 1048
+- tap_img:
+    target: rec_自动周回_261125_09
+    timeout: 6
+    at:
+    - 1266
+    - 1298
+- tap_img:
+    target: rec_自动周回_261125_10
+    timeout: 6
+    at:
+    - 1644
+    - 1311
+- tap_img:
+    target: rec_自动周回_261125_11
+    timeout: 6
+    at:
+    - 385
+    - 1402
