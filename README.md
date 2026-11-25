@@ -353,10 +353,17 @@ game:
 
 如果这个项目对你有帮助，欢迎请作者喝杯奶茶 🧋
 
-<p align="center">
-  <img src="docs/donate/alipay.png" width="240" alt="支付宝赞赏码">
-  <br>
-  <sub>💙 支付宝赞赏</sub>
-</p>
+<table align="center">
+  <tr>
+    <td align="center" width="300">
+      <img src="docs/donate/wechat.png" width="210" alt="微信赞赏码"><br>
+      <b>💚 微信赞赏</b>
+    </td>
+    <td align="center" width="300">
+      <img src="docs/donate/alipay.png" width="210" alt="支付宝赞赏码"><br>
+      <b>💙 支付宝赞赏</b>
+    </td>
+  </tr>
+</table>
 
 <p align="center">感谢你的支持 ✨</p>
