@@ -192,19 +192,31 @@ def _open(url: str, timeout: float = 8.0, headers: dict | None = None):
 def _pick_asset(assets: list[dict]) -> dict | None:
     """在 Release 附件里挑 Windows 免安装包。
 
-    用户可能改过附件名（截图里就是改过的），所以不认死文件名：
-    先找名字里带 win64/win 的 zip，再退到任意 zip。都没有就不提供自动更新。
+    不认死文件名：用户可能把附件改成「KyHelper_Web-1.0.0-win64」这种**没有扩展名**
+    的名字（Release 页面照样能下），所以按特征打分，而不是 endswith(".zip")：
+      · zip 包 +40，名字带 win/win64/windows +30，带项目名 +10
+      · 源码包（Source code / .tar.gz / .7z）直接 -100，别去下它
+    分数够才返回；全是源码包就当「这个 Release 没附程序包」。
     """
-    zips = [a for a in (assets or [])
-            if str(a.get("name", "")).lower().endswith(".zip")
-            and a.get("browser_download_url")]
-    if not zips:
+    items = [a for a in (assets or []) if a.get("browser_download_url")]
+    if not items:
         return None
-    for a in zips:
+
+    def score(a: dict) -> int:
         n = str(a.get("name", "")).lower()
+        s = 0
+        if n.endswith(".zip"):
+            s += 40
         if "win64" in n or "win" in n or "windows" in n:
-            return a
-    return zips[0]
+            s += 30
+        if "kyhelper" in n:
+            s += 10
+        if "source" in n or n.endswith((".tar.gz", ".tar", ".tar.xz", ".7z", ".rar")):
+            s -= 100
+        return s
+
+    best = max(items, key=score)
+    return best if score(best) >= 30 else None
 
 
 def fetch_latest(repo: str = DEFAULT_REPO, timeout: float = 8.0) -> dict:
@@ -405,9 +417,11 @@ class Updater:
 
     def _worker(self, asset: dict) -> None:
         try:
-            name = str(asset.get("name") or "KyHelper_Web-win64.zip")
-            dest = self._upgrade_dir() / name
-            self.log.info(f"开始下载 v{self.info.get('latest')}：{name}"
+            # 统一落成 .zip：附件可能被改名成没扩展名的文件，而 Expand-Archive
+            # 只认 .zip 结尾，这里替它把名字摆正。
+            ver = re.sub(r"[^\w.\-]+", "", str(self.info.get("latest") or "new"))
+            dest = self._upgrade_dir() / f"KyHelper_Web-{ver}.zip"
+            self.log.info(f"开始下载 v{ver}：{asset.get('name')}"
                           f"（{int(asset.get('size') or 0) / 1024 / 1024:.0f} MB）")
             self._download(str(asset["url"]), dest)
             self._set(progress=100, got=dest.stat().st_size,
