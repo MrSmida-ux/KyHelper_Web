@@ -17,6 +17,7 @@ const S = {
   dragging: '',         // 正在拖动的任务 key
   alertTs: 0,           // 已经弹过的提示时间戳
   orderFile: 'tasks/order.json',   // 排序文件路径（服务端给，打包后在 exe 目录）
+  update: null,         // 服务端给的最新版本/下载进度
 };
 
 // 上一次渲染录制面板时用的 key。换了一次录制才回填输入框，
@@ -662,6 +663,7 @@ function applyState(st) {
   if (st.device && st.device[0]) S.screen = st.device;
   else if (st.screen) S.screen = st.screen;
   if (st.game) $('gameName').textContent = st.game;
+  if (st.update) renderUpdate(st.update);
 
   // 任务跑的时候喊话（清单刷不出战、BP 不足、BOSS 被抢…）要让人看见，
   // 不能只躺在下面的日志里。按 ts 判断是不是新的，避免每次轮询重弹；
@@ -1123,6 +1125,10 @@ document.addEventListener('keydown', (e) => {
     }
     return;      // 弹窗开着时别让下面的快捷键抢输入
   }
+  if (!$('updDlg').hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); $('updDlg').hidden = true; }
+    return;
+  }
   if (e.key === 'Escape' && S.running) $('btnStop').click();
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('btnRun').click();
 });
@@ -1147,6 +1153,170 @@ document.addEventListener('keydown', (e) => {
     document.body.style.cursor = '';
   });
 })();
+
+// ---------------------------------------------------------------- 自动更新
+// 版本号由服务端（core/update.py）从 GitHub Release 查来。有新版时顶栏
+// 版本号会变成「v1.0.0 → v1.0.1」并高亮，点开弹窗就能一键更新：
+// 程序自己退出 → update.ps1 换掉 _internal 和 exe → 重新拉起 → 面板自己刷新。
+// 仓库私有或改名时服务端只回一句「暂不可访问」，这里照常显示当前版本。
+let updWatching = false;
+
+function fmtSize(n) {
+  if (!n) return '';
+  return n > 1024 * 1024 ? (n / 1024 / 1024).toFixed(0) + ' MB'
+                        : Math.max(1, Math.round(n / 1024)) + ' KB';
+}
+
+function renderVersion(u) {
+  const btn = $('btnVer');
+  if (!u || !u.current) { btn.textContent = 'v—'; return; }
+  if (u.stage === 'downloading') {
+    btn.textContent = `更新中 ${u.progress || 0}%`;
+    btn.classList.add('new');
+    btn.title = '正在下载新版本';
+    return;
+  }
+  btn.textContent = u.has_update ? `v${u.current} → v${u.latest}` : `v${u.current}`;
+  btn.classList.toggle('new', !!u.has_update);
+  btn.title = u.has_update ? `发现新版本 v${u.latest}，点击更新`
+    : (u.ok ? '已是最新版本，点击重新检查' : (u.hint || '点击检查更新'));
+}
+
+function renderUpdate(u) {
+  S.update = u || null;
+  if (!u) return;
+  renderVersion(u);
+  if ($('updDlg').hidden) return;   // 弹窗没开就只更新顶栏，别动里面的文字
+
+  const hint = $('updHint'), notes = $('updNotes'), prog = $('updProg'),
+        bar = $('updBar'), ptext = $('updProgText'),
+        apply = $('updApply'), page = $('updPage');
+  const stage = u.stage || 'idle';
+
+  // 失败后还能再试一次，所以 failed 也算「可以点」
+  const canPress = stage === 'idle' || stage === 'failed';
+  apply.hidden = !(u.can_apply && u.has_update && canPress);
+  apply.disabled = !canPress;
+  apply.textContent = stage === 'failed' ? '重试更新' : '立即更新';
+  page.hidden = !u.url;
+
+  const busy = stage === 'downloading' || stage === 'ready' || stage === 'restarting';
+  prog.hidden = !busy;
+  if (busy) {
+    const pct = stage === 'downloading' ? (u.progress || 0) : 100;
+    bar.style.width = pct + '%';
+    ptext.textContent = stage === 'downloading'
+      ? `${pct}%  ${fmtSize(u.got || 0)} / ${fmtSize(u.total || 0)}`
+      : (stage === 'ready' ? '下载完成，准备重启…' : '正在重启…');
+  }
+
+  if (stage === 'downloading') {
+    hint.textContent = `正在下载 v${u.latest}，下完会自动关闭并重启（约 10 秒），先别关窗口。`;
+  } else if (busy) {
+    hint.textContent = '正在换包重启，面板会自己刷新，稍等十来秒…';
+  } else if (stage === 'failed') {
+    hint.textContent = '更新失败：' + (u.err || '未知原因') + '（旧版本还能用，可以稍后重试）';
+  } else if (u.has_update) {
+    hint.textContent = `当前 v${u.current}，最新 v${u.latest}`
+      + (u.published ? `（${u.published.slice(0, 10)} 发布）` : '')
+      + (u.frozen ? '。点「立即更新」会自动下载并重启，不会动配置、模板和登录态。'
+                  : '。');
+    if (u.hint) hint.textContent += ' ' + u.hint;
+  } else if (u.ok) {
+    hint.textContent = `已是最新版本 v${u.current}`
+      + (u.checked_at ? `（${new Date(u.checked_at * 1000).toLocaleTimeString()} 检查）` : '');
+  } else {
+    hint.textContent = u.hint || '检查失败，稍后再试';
+  }
+
+  notes.hidden = !u.notes;
+  if (u.notes) notes.textContent = u.notes;
+}
+
+async function checkUpdate(manual) {
+  const btn = $('updCheck');
+  btn.disabled = true;
+  $('updHint').textContent = '正在检查 GitHub…';
+  try {
+    const r = await api('/api/update/check', {});
+    const u = r.update || {};
+    renderUpdate(u);
+    if (manual) {
+      toast(u.has_update ? `发现新版本 v${u.latest}` : '已是最新版本', false, 3200);
+    }
+  } catch (e) {
+    $('updHint').textContent = '检查失败：' + e.message + '（连不上的话不影响使用）';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function openUpdDlg() {
+  $('updDlg').hidden = false;
+  renderUpdate(S.update || {});
+  if (!S.update || !S.update.checked_at || !S.update.ok) checkUpdate(false);
+}
+
+async function applyUpdate() {
+  if (!confirm('更新会先关闭当前程序，下载完成后自动重启。现在开始？')) return;
+  const cur = (S.update && S.update.current) || '';
+  let r;
+  try {
+    r = await api('/api/update/apply', {});
+  } catch (e) {
+    r = { ok: false, hint: e.message };
+  }
+  if (!r.ok) return toast(r.hint || '启动更新失败', true);
+  $('updApply').disabled = true;
+  watchUpdate(cur);
+}
+
+// 盯着状态直到「进程退出 → 新版本起来」，版本号变了就刷新面板。
+async function watchUpdate(oldVer) {
+  if (updWatching) return;
+  updWatching = true;
+  let restarted = false;
+  for (let i = 0; i < 300; i++) {
+    await sleep(700);
+    let st = null;
+    try { st = await api('/api/state'); } catch (e) { st = null; }
+    if (st && st.update) {
+      renderUpdate(st.update);
+      if (st.update.stage === 'failed') {
+        toast('更新失败：' + (st.update.err || ''), true, 9000);
+        updWatching = false;
+        return;
+      }
+      if (restarted && st.update.stage === 'restarting') restarted = true;
+      if (oldVer && st.version && st.version !== oldVer) {
+        toast('已更新到 v' + st.version + '，正在刷新面板');
+        await sleep(700);
+        location.reload();
+        return;
+      }
+      if (restarted && st.update.stage === 'idle') {
+        // 起来了但还是老版本：换包失败自动回滚了
+        toast('更新没生效（已回滚到 v' + st.version + '），可以稍后重试', true, 9000);
+        updWatching = false;
+        return;
+      }
+    } else if (restarted && !$('updDlg').hidden) {
+      $('updHint').textContent = '程序已退出，正在等新版本起来…';
+    }
+  }
+  updWatching = false;
+  toast('没等到新版本响应，手动重开 KyHelper_Web.exe 即可', true, 8000);
+}
+
+$('btnVer').onclick = openUpdDlg;
+$('updClose').onclick = () => { $('updDlg').hidden = true; };
+$('updDlg').onclick = (e) => { if (e.target === $('updDlg')) $('updDlg').hidden = true; };
+$('updCheck').onclick = () => checkUpdate(true);
+$('updApply').onclick = applyUpdate;
+$('updPage').onclick = () => {
+  const u = S.update || {};
+  if (u.url) window.open(u.url, '_blank');
+};
 
 // ---------------------------------------------------------------- 启动
 // ?once=1 只取一次画面，用于截图和静态预览（持续轮询会让无头浏览器永远不空闲）

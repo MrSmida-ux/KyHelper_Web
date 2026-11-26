@@ -19,6 +19,8 @@
   POST /api/login/import     借用本机 Chrome 的登录态（拷 cookie 后重开浏览器）
   POST /api/rec/*            录制：start / tap / cmd / undo / save / cancel
   POST /api/tasks/*          顺序 / 选项 / 勾选 / 改名 / 删除
+  POST /api/update/check     立刻查一次 GitHub 上的新版本
+  POST /api/update/apply     下载并换包（下完自动退出、由更新脚本重启）
 """
 from __future__ import annotations
 
@@ -41,7 +43,7 @@ import numpy as np
 ROOT_FILE = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_FILE))
 
-from core import Cancelled, NotFound, bootstrap, chrome_profile, paths, recipe  # noqa: E402
+from core import Cancelled, NotFound, bootstrap, chrome_profile, paths, recipe, update  # noqa: E402
 from core.log import save_shot, setup  # noqa: E402
 from core.recorder import Recording  # noqa: E402
 from tasks import load_jobs, run_jobs, save_order  # noqa: E402
@@ -54,6 +56,9 @@ ROOT = paths.app_dir()
 RES = paths.res_dir()
 WEB_DIR = RES / "web"
 REF_W, REF_H = 2560, 1440
+# 最近一次收到请求的时间：自动更新重启后靠它判断「面板是不是还开着」，
+# 开着就不再弹第二个窗口（旧面板自己会刷新）。
+LAST_HIT = [0.0]
 
 
 # ---------------------------------------------------------------- 日志收集
@@ -133,6 +138,17 @@ class Session:
         )
         self.mem = MemoryLogHandler()
         self.log.addHandler(self.mem)
+
+        # 自动更新：后台线程查 GitHub Release，面板顶栏显示版本号。
+        # 仓库私有/改名时 API 404，这里只记一条 info，不影响任何功能。
+        up = self.cfg.get("update") or {}
+        self.updater = update.Updater(
+            ROOT, self.log,
+            repo=str(up.get("repo") or update.DEFAULT_REPO),
+            enabled=bool(up.get("check", True)),
+            interval_hours=float(up.get("interval_hours") or 6),
+        )
+        self.updater.start()
 
         self.game, self.cap, self.matcher, self.dev = bootstrap.build(self.cfg, ROOT, self.log)
         self.dev.cancel_event = threading.Event()
@@ -690,6 +706,9 @@ class Session:
             "mode": self.game.mode,
             "viewport": [self.game.vw, self.game.vh],
             "perf": self.matcher.perf(),
+            # ---- 版本 / 自动更新 ----
+            "version": self.updater.info.get("current") or "",
+            "update": self.updater.snapshot(),
         }
 
     def select(self, keys: list[str]) -> dict:
@@ -977,6 +996,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _json(self, obj, code: int = 200) -> None:
+        LAST_HIT[0] = time.time()
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1145,6 +1165,12 @@ class Handler(BaseHTTPRequestHandler):
                 s.reload()
                 return self._json({"ok": True, "count": len(s.tasks)})
 
+            # ---- 自动更新 ----
+            if u.path == "/api/update/check":
+                return self._json({"ok": True, "update": s.updater.check_now()})
+            if u.path == "/api/update/apply":
+                return self._json(s.updater.apply_async())
+
             # ---- 录制 ----
             if u.path == "/api/rec/start":
                 return self._json(s.rec_start(d.get("key", "new_task"), d.get("name", "")))
@@ -1310,7 +1336,22 @@ def _open_panel_if_overlay_failed(url: str) -> None:
     open_panel(url)
 
 
-def main(open_browser: bool = True) -> None:
+def _open_if_panel_missing(url: str) -> None:
+    """自动更新重启后的兜底开窗。
+
+    旧面板页面在等处「版本号变了」然后 location.reload()，一般 2~3 秒就回来了，
+    所以先等；15 秒都没有任何请求进来（用户把窗口关了）才补一个。
+    """
+    for _ in range(6):
+        time.sleep(2.5)
+        if LAST_HIT[0] > 0:
+            SESSION.log.info("面板已连上，不再另开窗口")
+            return
+    SESSION.log.info("更新后没等到面板刷新，重新开一个窗口")
+    open_ui(url)
+
+
+def main(open_browser: bool = True, updated: bool = False) -> None:
     global SESSION
     SESSION = Session()
     ui = SESSION.cfg.get("ui") or {}
@@ -1324,10 +1365,38 @@ def main(open_browser: bool = True) -> None:
     SESSION.log.info(f"控制面板：{url}")
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     httpd.daemon_threads = True
+
+    def _quit_for_update() -> None:
+        """换包前收摊：停画面流、解 CDP、关 HTTP 服务，然后硬退出。
+
+        必须 os._exit：正常退出要等一堆守护线程收尾，而更新脚本正等着本进程
+        消失才好替换 exe/_internal，拖久了它按超时也算「已退出」，但端口可能
+        还被占着 —— 新版本起来会绑不上端口。
+        """
+        SESSION.log.info("更新：正在退出，换包完成后会自动重启")
+        try:
+            SESSION.shutdown()
+        except Exception:
+            pass
+        try:
+            httpd.shutdown()
+        except Exception:
+            pass
+        time.sleep(0.4)
+        os._exit(0)
+
+    SESSION.updater.on_exit = _quit_for_update
+
     if open_browser and not os.environ.get("KYWEB_NO_BROWSER"):
         overlay = bool(ui.get("overlay", False))
         panel = bool(ui.get("panel", True))
-        if panel or not overlay:
+        if updated:
+            # 自动更新重启：旧面板窗口多半还开着，它会自己刷新回来。
+            # 等十几秒，真没有面板来敲门（用户把窗口关了）才补一个。
+            SESSION.log.info("更新重启完成，等原面板刷新…")
+            threading.Thread(target=_open_if_panel_missing, args=(url,),
+                             name="panel-after-update", daemon=True).start()
+        elif panel or not overlay:
             threading.Timer(1.0, open_ui, args=(url,)).start()
         else:
             # 浮层模式：不弹独立窗口，25 秒后确认浮层有没有装上

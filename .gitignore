@@ -14,3 +14,5 @@ dist/
 build/
 .venv-build/
 release/
+# 自动更新下载的压缩包/解压目录/旧版备份
+update/

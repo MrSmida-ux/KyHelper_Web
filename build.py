@@ -38,6 +38,7 @@ DATA = [
     ("tasks/recipes", "tasks/recipes"),         # 录制任务 + _embedded
     ("config.yaml", "."),                       # 默认配置，可直接改
     ("README.md", "."),                         # 出问题时能查
+    ("VERSION", "."),                           # 自动更新拿它比版本
 ]
 
 EXCLUDES = [
@@ -49,6 +50,24 @@ EXCLUDES = [
 def version() -> str:
     p = ROOT / "VERSION"
     return p.read_text(encoding="utf-8").strip() if p.exists() else "1.0.0"
+
+
+def sync_version() -> str:
+    """把 VERSION 同步进 core/version.py。
+
+    版本号只有一个源头（VERSION 文件）：打包时写进代码常量，运行时读不到
+    VERSION 文件（被用户删了、或者压缩包里没有）还能报出正确版本，
+    自动更新不会因为「读到 0.0.0」把同一版本当成新版本反复提示。
+    """
+    v = version()
+    mod = ROOT / "core" / "version.py"
+    text = ('"""打包时由 build.py 从 VERSION 同步过来的版本号（源码运行时也读它）。"""\n\n'
+            f'VERSION = "{v}"\n')
+    if not mod.exists() or mod.read_text(encoding="utf-8") != text:
+        mod.write_text(text, encoding="utf-8")
+        print(f"[i] 版本号 {v} 已写入 core/version.py")
+    return v
+
 
 
 def pick_python() -> Path:
@@ -114,18 +133,37 @@ def write_readme(out: Path) -> None:
     cfg = ROOT / "config.yaml"
     if cfg.exists():
         shutil.copyfile(cfg, out / "config.yaml")
+    # 版本号放根目录：面板上显示、自动更新拿它跟 Release 的 tag 比
+    (out / "VERSION").write_text(version() + "\n", encoding="utf-8")
+    # README 也放根目录一份：使用说明里写着「见同目录 README.md」，
+    # 而 --add-data 打进 _internal 的那份用户在资源管理器里看不到
+    readme = ROOT / "README.md"
+    if readme.exists():
+        shutil.copyfile(readme, out / "README.md")
     (out / "使用说明.txt").write_text(
         "双穹幻想 Burst 网页版助手\r\n"
         "========================\r\n\r\n"
+        "【使用前提，先看这三条】\r\n"
+        "1. 只支持 E 服（ERO LABS 的云游戏页）。别的服界面文案和按钮位置都不一样，\r\n"
+        "   模板对不上，改配置也没用。\r\n"
+        "2. 游戏语言必须是简体中文。所有识别模板都是按简体中文界面录的，\r\n"
+        "   切成英文/日文之后连主页都认不出来，任务跑不起来。\r\n"
+        "3. 战斗配队请提前设好。脚本不配队、不换人、不调装备，只负责点「战斗/开始」。\r\n"
+        "   队伍空着或战力不够，结果就是打不过、卡在结算页。\r\n\r\n"
+        "----------------------------\r\n\r\n"
         "1. 双击 KyHelper_Web.exe 启动，会自动打开控制面板并拉起一个独立的 Chrome。\r\n"
         "   第一次要在那个 Chrome 窗口里登录一次，之后不用再登（登录态存在 chrome-data\\）。\r\n"
         "2. 需要本机装有 Chrome 或 Edge（任一即可），程序不自己带浏览器。\r\n"
         "3. 配置在同目录 config.yaml，日志在 logs\\，双击运行前别删这两个。\r\n"
         "4. 想换识别模板：把 png 丢进 assets\\templates\\，文件名跟原来一致就会覆盖。\r\n"
-        "5. 关掉黑色控制台窗口 = 退出程序；任务运行中也可以点面板上的「停止」。\r\n\r\n"
+        "5. 关掉黑色控制台窗口 = 退出程序；任务运行中也可以点面板上的「停止」。\r\n"
+        "6. 有新版本时，面板顶栏的版本号会变亮，点它就能一键更新（自动下载、重启）；\r\n"
+        "   旧版会自动备份到 update\\backup\\，更新日志在 logs\\update.log。\r\n"
+        "   不想自动检查就在 config.yaml 的 update.check 改成 false。\r\n\r\n"
         "杀掉进程：任务管理器里结束 KyHelper_Web.exe。\r\n"
         "详细的机制说明见同目录 README.md。\r\n",
         encoding="utf-8")
+
 
 
 def size_of(p: Path) -> str:
@@ -147,6 +185,7 @@ def main() -> int:
     args = ap.parse_args()
 
     print(f"== 打包 {NAME} v{version()} ==")
+    sync_version()
     py = pick_python()
     check_env(py)
     if not args.keep:

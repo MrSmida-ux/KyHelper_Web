@@ -114,6 +114,16 @@ ui:
   # 顶栏帧率按钮点击循环切换，这里会被自动改写以记住上次选择。
   fps_mode: auto
 
+# 自动更新：启动后隔一段时间去 GitHub 查一次最新 Release，
+# 有新版就在面板顶栏的版本号上提示，点一下就能下载换包、自动重启。
+update:
+  # 关掉就完全不联网检查（内网/不想让它请求 GitHub 时改成 false）
+  check: true
+  # 仓库地址 owner/name。fork 或改名后改这里
+  repo: "MrSmida-ux/KyHelper_Web"
+  # 每隔多少小时查一次（只在程序开着的时候查）
+  interval_hours: 6
+
 logging:
   level: "INFO"
   dir: "logs"

@@ -157,6 +157,8 @@ def main() -> int:
     ap.add_argument("-t", "--task", action="append", default=[], help="只跑指定任务（可多次）")
     ap.add_argument("--dry", action="store_true", help="只识别不点击")
     ap.add_argument("--no-ui", action="store_true", help="不走界面，直接跑任务")
+    ap.add_argument("--updated", action="store_true",
+                    help="内部参数：由自动更新脚本重启时带上，避免再弹一个面板窗口")
     args = ap.parse_args()
 
     if args.probe:
@@ -169,7 +171,7 @@ def main() -> int:
         return cmd_run(args.task, args.dry)
 
     import gui_server
-    gui_server.main(open_browser=True)
+    gui_server.main(open_browser=True, updated=bool(args.updated))
     return 0
 
 

@@ -7,11 +7,25 @@
 - 点击：`Input.dispatchMouseEvent`，落在游戏画布上，不抢鼠标、不抢前台
 - 依赖：Chrome + opencv + numpy + PyYAML
 - 任务：13 个内置 + 8 个录制，354 张模板
+- 更新：免安装版自带版本检查，面板顶栏点版本号即可下载换包重启
 
-> **不想装 Python？** 下 [**v1.0.0 免安装版**](https://github.com/MrSmida-ux/KyHelper_Web/releases/latest)
+> **不想装 Python？** 下 [**v1.1.0 免安装版**](https://github.com/MrSmida-ux/KyHelper_Web/releases/latest)
 > （Windows x64，zip 约 71 MB）：解压后双击 `KyHelper_Web.exe` 就能跑，
 > 运行时和 opencv/numpy 都打包在 `_internal/` 里，只需要本机装有 Chrome 或 Edge。
 > 想改代码或自己加模板，再按下面的源码方式跑。
+
+---
+
+## 〇、使用前提（先看三条）
+
+1. **只支持 E 服。** 所有模板和坐标都是照着 ERO LABS 那个云游戏页
+   （`cloud_game.html?id=55`）录的。别的服（其他语言服 / 其他渠道服）界面文案、
+   按钮位置、分辨率都不一样，识别会大面积对不上，**不要指望改改配置就能通用**。
+2. **游戏语言必须是简体中文。** 354 张模板全程按简体中文界面录制，标题、按钮、
+   弹窗文字都在模板里。切成 English / 日本語 之后，主页锚点都认不到，任务是跑不起来的。
+3. **战斗配队请提前设好。** 脚本不负责配队、不换人、不调装备，只按模板点「战斗 /
+   自动 / 开始」。队伍空着、人没上齐、战力不够，结果就是打不过或者卡在结算页。
+   日常、迷宫、圣域这些要打的关卡，先在游戏里把队伍和自动战斗设置好再跑。
 
 ---
 
@@ -270,6 +284,7 @@ core/
   recipe.py         声明式步骤解释器（录制任务）
   recorder.py       录制：点一下自动裁模板
   log.py paths.py bootstrap.py
+  update.py         查 GitHub Release、下载换包（面板顶栏的版本号）
 tasks/            13 个内置任务 + recipes/（8 个录制 yaml）
 assets/templates/ 354 张模板 + 同名 .json（记基准分辨率和裁切位置）
 web/              控制台前端
@@ -277,6 +292,7 @@ chrome-data/      工具自己那份 Chrome 用户目录（登录态在这，不
 logs/             运行日志、截图、失败现场（不进 git）
 build.py          打包成免 Python 的 exe（PyInstaller）
 release/          build.py 的产物（不进 git）
+update/           自动更新下载的 zip / 解压目录 / 旧版备份（不进 git）
 ```
 
 ### 打包成 exe
@@ -293,6 +309,28 @@ python build.py --zip        # → release/KyHelper_Web/ 和 release/KyHelper_We
 打进去的资源和源码结构对应：`assets/templates`、`web`、`tasks/recipes`、`config.yaml`。
 程序跑起来时 `core/paths.py` 把它们复制到 exe 同级目录一份（已存在的文件不覆盖，
 用户改过的模板能留住）；内置的那份留在 `_internal/` 当兜底。
+
+### 自动更新（`core/update.py`）
+
+面板顶栏右侧显示当前版本（就是同目录 `VERSION` 的值）。程序启动后隔几个小时
+去 GitHub 查一次最新 Release，有新版就变成 `v1.1.0 → v1.2.0` 并高亮，点它：
+
+1. **下载**：挑 Release 里名字带 `win` 的 zip（附件改名也能认，退到任意 zip；
+   只有源码包就不提供更新）。下载中面板显示百分比，日志在 `logs/update.log`；
+2. **退出**：写一个 `update/update.ps1`，本进程收摊退出（Windows 上跑着的 exe 和
+   `_internal/*.pyd` 自己删不掉自己）；
+3. **换包**：脚本等进程消失后，把旧的 `KyHelper_Web.exe` 和 `_internal/` 挪进
+   `update/backup/`，新版解压进来，然后带 `--updated` 重新拉起程序；
+   换失败会自动回滚到旧版再启动；
+4. **接管**：旧面板的页面在等处「版本号变了」，变了就 `location.reload()`；
+   15 秒内没有任何请求（用户把窗口关了）才补开一个新窗口。
+
+只换程序本体，**不碰** `config.yaml`、`assets/templates/`、`tasks/`、`logs/`、
+`chrome-data/`（登录态）。新版新增的模板由 `ensure_layout` 在下次启动时补出来。
+
+仓库私有或改名时 GitHub API 返回 404，这里只记一句「暂不可访问」然后跳过，
+不影响任何功能；等仓库重新 public 下一次轮询自然就通了。fork 的人改
+`update.repo` 即可。源码运行时不会提示自动更新（该 `git pull`）。
 
 ---
 
@@ -336,6 +374,11 @@ input:
 
 game:
   back_point: [70, 70]    # 返回键兜底坐标
+
+update:
+  check: true                       # 关掉就完全不查 GitHub
+  repo: "MrSmida-ux/KyHelper_Web"   # fork / 改名后改这里
+  interval_hours: 6                 # 多久查一次
 ```
 
 ---
@@ -359,6 +402,8 @@ game:
 | 任务卡在某个界面 | 多半是返回键。给那个页面录个 `btn_back`（见第五节） |
 | 4K 屏字太小 | 已跟随系统缩放，不强制 1x。仍是 1x 就检查是否有旧进程在跑（`run.py` 只应有一个） |
 | 看不到控制面板 | 默认就是独立面板；若把 `ui.overlay` 改成了 `true`，浮层被页面换 DOM 清掉时程序会在 30 秒后兜底开独立窗口 |
+| 版本号点开说「仓库暂不可访问」 | 仓库私有或改名了，检查被跳过。等它重新 public 就会通；fork 的话把 `update.repo` 改成你的地址 |
+| 更新后没重启起来 / 想退回旧版 | 先看 `logs/update.log`；旧版完整备份在 `update/backup/`，把里面的 `KyHelper_Web.exe` 和 `_internal/` 挪回上一级即可 |
 
 运行日志和失败现场在 `logs/`（失败截图在 `logs/fails/`），出问题先看这两处。
 
