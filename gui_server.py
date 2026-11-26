@@ -601,7 +601,34 @@ class Session:
 
     # ------------------------------------------------------------ 任务
     def reload(self) -> None:
+        self._reload_task_modules()
         self.tasks = load_jobs(ROOT)
+
+    def _reload_task_modules(self) -> None:
+        """源码方式运行时把 tasks/*.py 重载一遍：改完任务点「刷新任务」就生效。
+
+        打包版跳过（代码在 exe 里，改了也没用）；重载出错就继续用启动时那份，
+        不让面板因为改了半截代码就打不开。
+        """
+        if getattr(sys, "frozen", False):
+            return
+        try:
+            import importlib
+
+            import tasks as pkg
+            import tasks.daily
+            import tasks.registry
+
+            impls = [n for n in list(sys.modules)
+                     if n.startswith("tasks.")
+                     and n not in ("tasks.daily", "tasks.registry")]
+            for name in sorted(impls, key=lambda s: (-s.count("."), s)):
+                importlib.reload(sys.modules[name])
+            importlib.reload(tasks.daily)          # 用新的 job 函数重建 JOBS
+            tasks.registry.JOBS = tasks.daily.JOBS  # load_jobs 手里的那份也换掉
+            pkg.JOBS = tasks.daily.JOBS
+        except Exception as e:                     # 语法错/导入错都别炸面板
+            self.log.warning(f"  任务模块重载失败（继续用启动时那份）：{e}")
 
     def _notify(self, msg: str) -> None:
         now = time.time()

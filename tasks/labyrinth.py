@@ -9,7 +9,9 @@
 1. 入口：主页→冒险→特殊关卡→迷宫→难度
 2. 每层开始是「三扇门」页：点门看弹窗标题「是否选择XX的迷宫 NF？」，
    用王名首字模板识别。匹配目标王→确定；不匹配→取消看下一扇；
-   重进/返回会重新随机，N 次没刷到就跳过提示。
+   **三扇门的排列在关掉弹窗后不会变**，必须退出迷宫重进才重新随机
+   （第 1 层退到冒险页再进最快：门页左上箭头点两下；第 2 层起只退上一层
+   再点「前往下层」）。N 次没刷到就跳过提示。
 3. 进层后是「路线页」：每层 5 房（最后一层的最后一层是 6 房含 BOSS）。
    - 房间槽位固定 6 个，但**小人房的数量和位置每层随机**，必须实时扫描
    - CLEAR 标记 = 已打完，跳过
@@ -205,12 +207,16 @@ def _tap_until_gone(dev: Device, name: str, x: int, y: int,
 
 
 # ---------------------------------------------------------------- 导航
-def enter_labyrinth(dev: Device, difficulty: str = "hard") -> None:
-    if not ensure_home(dev):
-        raise NotFound("回不到主页")
-    if not dev.tap_img("tab_adventure", timeout=8, threshold=0.82):
-        raise NotFound("主页没找到[冒险]")
-    dev.wait_stable(timeout=4)
+def enter_labyrinth(dev: Device, difficulty: str = "hard",
+                    from_adventure: bool = False) -> None:
+    """主页→冒险→特殊关卡→迷宫(→难度)。from_adventure=True 表示已经在冒险页，
+    省掉回主页那一段（重刷三扇门时用，能少一半时间）。"""
+    if not from_adventure:
+        if not ensure_home(dev):
+            raise NotFound("回不到主页")
+        if not dev.tap_img("tab_adventure", timeout=8, threshold=0.82):
+            raise NotFound("主页没找到[冒险]")
+        dev.wait_stable(timeout=4)
     if not dev.tap_img("maze_btn_special", timeout=8, threshold=0.85):
         raise NotFound("冒险页没找到[特殊关卡]")
     dev.wait_stable(timeout=3)
@@ -239,6 +245,28 @@ def go_back_up(dev: Device) -> bool:
     return not on_gate_page(dev)
 
 
+def _on_adventure(dev: Device) -> bool:
+    """真的在冒险页：[特殊关卡] 按钮在，且没有被「特殊关卡」弹窗盖着。"""
+    return _has(dev, "maze_btn_special", 0.85) and not _has(dev, "maze_btn_entry", 0.85)
+
+
+def _back_to_adventure(dev: Device, tries: int = 4) -> bool:
+    """连点左上返回箭头退出迷宫，直到看见冒险页的[特殊关卡]。
+
+    三扇门的排列是**整局迷宫**决定的，关掉门的确认框再点还是同一批门（实测
+    连开 5 轮全是同一组），必须退出迷宫重进才会重新随机。第一层退出没有任何
+    损失，所以直接退到冒险页最快：门页左上箭头点两下就到。
+    """
+    for _ in range(tries):
+        dev.check_cancel()
+        dev.screen(True)
+        if _on_adventure(dev):
+            return True
+        dev.log.info("  点左上返回，退出迷宫")
+        _tap(dev, 64, 96, settle=2.0)
+    return _on_adventure(dev)
+
+
 def is_route_page(dev: Device) -> bool:
     """当前是不是迷宫路线页（有房间槽位特征）。"""
     # 房间方块顶部有统一的红色装饰，用 CLEAR / 小人 / BOSS 任一特征或房间底纹判断
@@ -249,72 +277,137 @@ def is_route_page(dev: Device) -> bool:
     return False
 
 
-def return_to_gate_page(dev: Device, difficulty: str) -> bool:
-    """从当前页想办法回到三扇门页（重刷用）。"""
-    if on_gate_page(dev):
-        return True
-    # 返回上一层
-    go_back_up(dev)
-    dev.wait_stable(timeout=1.5)
-    if on_gate_page(dev):
-        return True
-    if is_route_page(dev):
-        # 在上一层路线页，点前往下层回门页
-        _tap(dev, 1274, 1070, settle=2.2)
-        return on_gate_page(dev)
-    # 其它情况（冒险页/主页）→ 重新走入口
-    if not ensure_home(dev):
+def reroll_gate(dev: Device, difficulty: str, floor: int = 1) -> bool:
+    """重刷三扇门：退出迷宫再从冒险页/主页进来，门才会重新随机。
+
+    第 1 层随便退（没进度可丢）：门页左上箭头点两下 → 冒险页 → 重新进迷宫。
+    第 2 层起退出迷宫会从第 1 层重来，所以只能退回上一层、再点「前往下层」；
+    这条路不行就不硬来，交给调用方跳过（宁可少打一层，也别把进度清掉）。
+    """
+    if on_gate_page(dev) and floor > 1:
+        # 第 2 层起退出迷宫会从第 1 层重来，只能退回上一层再点「前往下层」
+        go_back_up(dev)
+        if is_route_page(dev):
+            dev.log.info("  退回上一层，点[前往下层]重刷")
+            _tap(dev, 1274, 1070, settle=2.5)
+        if on_gate_page(dev):
+            return True
+        dev.log.warning("  第 %d 层退回上一层的路走不通，放弃重刷", floor)
         return False
-    enter_labyrinth(dev, difficulty)
+
+    # 第 1 层（或已经不在门页）：门页左上箭头点两下 → 冒险页 → 重进迷宫
+    at_adventure = _back_to_adventure(dev)
+    if not at_adventure:
+        dev.log.info("  退不到冒险页，改从主页重进")
+        if not ensure_home(dev):
+            return False
+    enter_labyrinth(dev, difficulty, from_adventure=at_adventure)
     return on_gate_page(dev)
 
 
 # ---------------------------------------------------------------- 三扇门找目标王
+def _door_king(dev: Device, th: float = 0.80) -> str | None:
+    """认出弹出框里是哪个王（只用来打日志、以及判断门有没有真的刷新）。"""
+    best, key = th, None
+    for k, tpl in KING_TPL.items():
+        if not dev.matcher.has(tpl):
+            continue
+        m = dev.find(tpl, th)
+        if m is not None and m.score >= best:
+            best, key = m.score, k
+    return key
+
+
+def _label(key: str | None) -> str:
+    return KING_LABEL.get(key, key) if key else "未知"
+
+
 def find_target_gate(dev: Device, target: str, rerolls: int,
-                     difficulty: str = "hard") -> bool:
+                     difficulty: str = "hard", floor: int = 1) -> bool:
     """在当前三扇门页找目标王并点确定进入本层。找不到重刷，超上限返回 False。"""
     tpl = KING_TPL[target]
     if not dev.matcher.has(tpl):
         raise NotFound(f"目标[{KING_LABEL[target]}]的模板 {tpl} 不存在")
+
+    prev_sig = None
+    same_rounds = 0
     for attempt in range(1, rerolls + 1):
         dev.check_cancel()
-        if not on_gate_page(dev):
-            # 不在门页 → 可能已在路线页（上一次已进），直接认为成功
-            dev.log.info("  已不在三扇门页，视为已进入本层")
+        if is_route_page(dev):
+            dev.log.info("  已在路线页，视为已进入本层")
             return True
+        if not on_gate_page(dev):
+            # 既不在门页也不在路线页（点歪/弹窗没关掉）→ 重走入口，别当成已进层
+            dev.log.info("  不在三扇门页，重走迷宫入口")
+            if not reroll_gate(dev, difficulty, floor):
+                # 回不去门页就不硬来，交给调用方按「没刷到」跳过，别把进度搞乱
+                dev.log.warning("  回不到三扇门页，先不打了")
+                return False
+
+        doors: list[str | None] = []
         found_idx = None
         for i, gx in enumerate(GATE_X):
             dev.check_cancel()
-            _tap(dev, gx, GATE_Y, settle=1.6)
-            if not _has(dev, "maze_btn_ok", 0.9):
-                # 没弹窗，可能点偏；按返回重试下一扇
-                dev.back()
-                dev.wait_stable(timeout=1.5)
+            ok = None
+            for _ in range(2):               # 弹窗偶尔被动画吃掉，同一扇门重试一次
+                _tap(dev, gx, GATE_Y, settle=1.6)
+                ok = _find(dev, "maze_btn_ok", 0.9)
+                if ok is not None:
+                    break
+                dev.log.info(f"  第{i+1}扇门没弹出确认框，重试")
+            if ok is None:
+                dev.log.warning(f"  第{i+1}扇门打不开，跳过这扇")
+                # 万一是弹窗开了但按钮没认出来，先关掉，别挡着后面的门
+                cancel = _find(dev, "maze_btn_cancel", 0.85)
+                if cancel:
+                    dev.tap(cancel.cx, cancel.cy)
+                    dev.wait_stable(timeout=1.2)
+                doors.append(None)
                 continue
             m = _find(dev, tpl, TH)
             if m is not None:
                 dev.log.info(f"  第{i+1}扇门=[{KING_LABEL[target]}] ({m.score:.3f})")
                 # 点确定进入
-                ok = _find(dev, "maze_btn_ok", 0.9)
-                if ok:
-                    dev.tap(ok.cx, ok.cy)
-                    dev.wait_stable(timeout=2.5)
-                    found_idx = i
+                dev.tap(ok.cx, ok.cy)
+                dev.wait_stable(timeout=2.5)
+                found_idx = i
                 break
-            dev.log.info(f"  第{i+1}扇门不是目标，取消")
+            king = _door_king(dev)            # 认一下是哪个王，只为了日志和比对
+            doors.append(king)
+            dev.log.info(f"  第{i+1}扇门=[{_label(king)}]，不是目标，取消")
             cancel = _find(dev, "maze_btn_cancel", 0.9)
             if cancel:
                 dev.tap(cancel.cx, cancel.cy)
+                dev.wait_stable(timeout=1.5)
             else:
+                # 兜底：只按返回，别多按，按多了会退出迷宫
                 dev.back()
-            dev.wait_stable(timeout=1.5)
+                dev.wait_stable(timeout=1.5)
+                if not on_gate_page(dev):
+                    dev.log.warning("  取消按钮没认出来，用返回键关弹窗后已离开门页")
+                    break
         if found_idx is not None:
             return True
-        # 没找到 → 左上返回上一层，再从上一层「前往下层」重刷
-        dev.log.info(f"  第 {attempt}/{rerolls} 次没刷出[{KING_LABEL[target]}]，返回重刷")
-        if not return_to_gate_page(dev, difficulty):
-            dev.log.warning("  没能回到三扇门页")
-            raise NotFound("重刷时回不到迷宫三扇门页")
+
+        sig = tuple(doors)
+        known = sum(1 for k in doors if k)
+        dev.log.info("  本轮三扇门：" + " / ".join(_label(k) for k in doors))
+        # 至少认出两扇才算数：全认不出来时 sig 全是 None，不能当成「门没变」
+        if known >= 2 and prev_sig is not None and sig == prev_sig:
+            same_rounds += 1
+        else:
+            same_rounds = 0
+        prev_sig = sig if known >= 2 else None
+        if same_rounds >= 2:
+            dev.log.warning("  三扇门连续两轮没变，重刷对这个账号没生效，不再空转")
+            return False
+
+        where = ("退出迷宫 → 冒险页重进" if floor <= 1
+                 else "退回上一层 → 前往下层")
+        dev.log.info(f"  第 {attempt}/{rerolls} 次没刷出[{KING_LABEL[target]}]，{where}")
+        if not reroll_gate(dev, difficulty, floor):
+            dev.log.warning("  没能回到三扇门页，不再重刷")
+            return False
         dev.wait_stable(timeout=1.5)
     return False
 
@@ -586,7 +679,7 @@ def job_labyrinth(dev: Device, opts: dict | None = None) -> None:
                 dev.log.warning("  没找到[前往下层]，尝试继续")
             dev.wait_stable(timeout=2)
         # 三扇门页找目标王并进入
-        entered = find_target_gate(dev, target, rerolls, difficulty)
+        entered = find_target_gate(dev, target, rerolls, difficulty, floor)
         if not entered:
             dev.notify(f"迷宫：第{floor}层重刷{rerolls}次没刷到"
                        f"[{KING_LABEL.get(target, target)}]，跳过（可从当前继续）")
