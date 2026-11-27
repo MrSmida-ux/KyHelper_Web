@@ -9,7 +9,7 @@
 - 任务：13 个内置 + 8 个录制，354 张模板
 - 更新：免安装版自带版本检查，面板顶栏点版本号即可下载换包重启
 
-> **不想装 Python？** 下 [**v1.1.0 免安装版**](https://github.com/MrSmida-ux/KyHelper_Web/releases/latest)
+> **不想装 Python？** 下 [**v1.2.0 免安装版**](https://github.com/MrSmida-ux/KyHelper_Web/releases/latest)
 > （Windows x64，zip 约 71 MB）：解压后双击 `KyHelper_Web.exe` 就能跑，
 > 运行时和 opencv/numpy 都打包在 `_internal/` 里，只需要本机装有 Chrome 或 Edge。
 > 想改代码或自己加模板，再按下面的源码方式跑。
