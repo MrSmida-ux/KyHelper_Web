@@ -12,18 +12,20 @@
    **三扇门的排列在关掉弹窗后不会变**，必须退出迷宫重进才重新随机
    （第 1 层退到冒险页再进最快：门页左上箭头点两下；第 2 层起只退上一层
    再点「前往下层」）。N 次没刷到就跳过提示。
-3. 进层后是「路线页」：每层 5 房（最后一层的最后一层是 6 房含 BOSS）。
+3. 进层后是「路线页」：房间**数量和位置每层都不一样**（3~6 间、卡片大小也跟着变），
+   所以房间靠每张卡顶部的宝箱现扫（多尺度），不写死坐标。
    - 房间槽位固定 6 个，但**小人房的数量和位置每层随机**，必须实时扫描
    - CLEAR 标记 = 已打完，跳过
-   - 先打普通骷髅房，小人房最后打（打完弹伙伴選択），BOSS 最后打
-4. 单房：点房→挑战准备页（扫荡亮就扫荡，灰就挑战）→编队页挑战→战斗（时长
+   - 扫到的每间房都有「骷髅」标记 = 这间还没打；小人房打完会弹伙伴选择；
+     顺序按 普通房 → 小人房 → 骷髅房（BOSS 通常带骷髅，自然排在后面）
+4. 房间从画面上扫（宝箱定位，数量/位置/大小都不固定），点房→挑战准备页（扫荡亮就扫荡，灰就挑战）→编队页挑战→战斗（时长
    不固定，轮询等待）→结算链。**结算页（队伍站在场景里、右下角[关闭]）一定会
    出现，但礼物/Win/加护/伙伴是随机叠加的**，顺序也不固定，所以要一轮轮扫到
    页面干净为止，不能只按固定顺序 if 一遍。
 5. 加护页：选指定类型（魔法/物理）的第一个，识别卡片中心图标
 6. 伙伴選択（小人房打完）：看卡片外框颜色，金>紫>蓝，认不准默认第一个
 7. 本层全 CLEAR→点「前往下层」→回三扇门页→重刷目标王→下一层
-8. 最后一层 BOSS 打完→直接回冒险页→点首页回主页
+8. 最后一层打完 → 没有[前往下层]了 → 回冒险页 → 点首页回主页
 
 模板基准全部是 2560×1440（dev.screen() 的识别帧），不是 /api/frame 的 1345。
 """
@@ -54,13 +56,15 @@ KINGS = [
     ("modao", "魔导王"), ("juji", "狙击王"), ("bawang", "霸王"),
 ]
 KING_LABEL = {k: v for k, v in KINGS}
+KING_LABEL["any"] = "任意王"
 KING_TPL = {k: f"maze_kind_{k}" for k, _ in KINGS}
 
 TARGET_OPTION = {
     "key": "kings", "label": "目标王", "single": True,
     "show_when": {"key": "modes", "values": ["manual"]},
-    "hint": "今天想打哪个王？每次重进迷宫门重新随机(6选3)，没刷到可返回重刷，超过上限跳过",
-    "choices": [{"v": k, "label": l} for k, l in KINGS],
+    "hint": "今天想打哪个王？每次重进迷宫门重新随机(6选3)，没刷到可返回重刷，超过上限跳过。"
+            "「任意」= 第一扇门直接进，不重刷，最快通关",
+    "choices": [{"v": k, "label": l} for k, l in KINGS] + [{"v": "any", "label": "任意"}],
     "default": ["qishi"],
 }
 DIFF_OPTION = {
@@ -89,7 +93,7 @@ RETRY_OPTION = {
 NEEDS = [
     "tab_adventure", "tab_home", "maze_btn_special", "maze_btn_entry",
     "maze_btn_hard", "maze_btn_normal", "maze_btn_ok", "maze_btn_cancel",
-    "maze_clear", "maze_person_icon", "maze_boss_room",
+    "maze_clear", "maze_person_icon", "maze_chest", "maze_skull", "maze_gate_arch",
     "maze_gift_title", "maze_win", "maze_jiahu_title", "maze_partner_title",
     "maze_buff_physical", "maze_buff_magic",
 ]
@@ -141,12 +145,13 @@ REF_H = 1440
 GATE_X = [535, 1280, 2025]
 GATE_Y = 560
 
-# 6 个房间槽位中心（2560×1440），实测
+# 旧的「固定 6 槽位」坐标，已废弃（房间数量/位置/大小都会变，现在靠 maze_chest 扫）。
+# 留着只为老代码/日志对照，别再拿来点。
 ROOM_SLOTS = [
     (460, 445), (1280, 445), (1939, 445),   # 上排：左 / 中(BOSS) / 右
     (460, 965), (1280, 965), (1939, 965),   # 下排：左 / 中 / 右
 ]
-BOSS_SLOT = 1  # 上中
+BOSS_SLOT = 1  # 上中（已废弃）
 
 TH = 0.85
 POLL = 0.6
@@ -161,6 +166,13 @@ def _xy(dev: Device, x: int, y: int) -> tuple[int, int]:
 def _tap(dev: Device, x: int, y: int, settle: float = 1.4) -> None:
     px, py = _xy(dev, x, y)
     dev.tap(px, py)
+    if settle:
+        dev.wait_stable(timeout=max(2.0, settle + 1.0))
+
+
+def _tap_abs(dev: Device, x: float, y: float, settle: float = 1.4) -> None:
+    """点「绝对像素」坐标（扫出来的房间位置），不再按 2560 基准换算。"""
+    dev.tap(int(x), int(y))
     if settle:
         dev.wait_stable(timeout=max(2.0, settle + 1.0))
 
@@ -208,6 +220,31 @@ def _tap_until_gone(dev: Device, name: str, x: int, y: int,
     return not _has(dev, name, th)
 
 
+def _tap_ok_until_gone(dev: Device, name: str, tries: int = 5,
+                       fallback: tuple[int, int] | None = None) -> bool:
+    """点弹窗底部的橙色[确定]，直到该弹窗消失。
+
+    弹窗高度是可变的：加护 4 行时确定在 y≈1212，只有 3 行时整体上移约 180，
+    伙伴选择又只有 y≈1082。所以位置一律用 maze_btn_ok 模板现找（实测三种弹窗
+    都是同一张图，0.999），不写死 y —— 写死就会像 08:11 那次一样，一直点不中
+    确定，加护页反复出现。
+    """
+    for _ in range(tries):
+        dev.check_cancel()
+        dev.screen(True)
+        if not _has(dev, name):
+            return True
+        m = _find(dev, "maze_btn_ok", 0.9)
+        if m is None:
+            if fallback is None:
+                return False
+            _tap(dev, fallback[0], fallback[1], settle=1.5)
+            continue
+        dev.tap(m.cx, m.cy)
+        dev.wait_stable(timeout=2.0)
+    return not _has(dev, name)
+
+
 # ---------------------------------------------------------------- 导航
 def enter_labyrinth(dev: Device, difficulty: str = "hard",
                     from_adventure: bool = False) -> None:
@@ -233,10 +270,19 @@ def enter_labyrinth(dev: Device, difficulty: str = "hard",
             dev.log.warning("  没找到[Normal]，沿用当前难度")
     else:
         dev.log.info("  使用 Hard 难度（5 层）")
+    _wait_page(dev, 20)          # 选完难度有加载过场，等门页真的出来
 
 
 def on_gate_page(dev: Device) -> bool:
-    return _has(dev, "maze_btn_hard", 0.9) or _has(dev, "maze_btn_normal", 0.9)
+    """是不是「选门」这一页：刚进迷宫的难度按钮页，或三扇门页。
+
+    三扇门页上**没有**难度按钮，原来只用 maze_btn_hard/normal 判断，等于永远
+    认不出门页 —— 点完「前往下层」后就被当成「不在门页」，于是退迷宫重进、
+    把刚清好的一层白扔。现在补一张门框拱顶模板（门页 3 处命中、路线页/主页 0）。
+    """
+    if _has(dev, "maze_btn_hard", 0.9) or _has(dev, "maze_btn_normal", 0.9):
+        return True
+    return bool(_match_all(dev, "maze_gate_arch", 0.80, per=3))
 
 
 def go_back_up(dev: Device) -> bool:
@@ -271,12 +317,45 @@ def _back_to_adventure(dev: Device, tries: int = 4) -> bool:
 
 def is_route_page(dev: Device) -> bool:
     """当前是不是迷宫路线页（有房间槽位特征）。"""
-    # 房间方块顶部有统一的红色装饰，用 CLEAR / 小人 / BOSS 任一特征或房间底纹判断
-    if _in_slot(dev, "maze_boss_room", *ROOM_SLOTS[BOSS_SLOT], 0.6):
+    # （保留这句只为对照历史实现；现在直接看有没有宝箱）
+    # 路线页的特征就是「一排房间卡」：每张卡顶部都有一个宝箱
+    return bool(_match_all(dev, "maze_chest", 0.85, per=3))
+
+
+def _wait_page(dev: Device, timeout: float = 15.0) -> str:
+    """等页面稳定，返回 'gate' / 'route' / 'other'。
+
+    换层、选难度、结算之后都有一段加载过场（黑屏/白屏/动画），这时候两个判断
+    都不成立。以前就是在这段过场里被判定成「不在三扇门页」，于是退迷宫重进，
+    刚打完的一层白扔 —— 所以要先等，最多等 timeout 秒。
+    """
+    end = time.time() + timeout
+    while time.time() < end:
+        dev.check_cancel()
+        dev.screen(True)
+        if on_gate_page(dev):
+            return "gate"
+        if is_route_page(dev):
+            return "route"
+        time.sleep(0.6)
+    return "other"
+
+
+def in_maze(dev: Device) -> bool:
+    """是不是已经在迷宫里面（路线页 / 加护 / 结算 / 礼物 / Win / 伙伴）。
+
+    给「续打」用：跑到一半断了、或手动打了一半停在加护页，再点任务就从当前层
+    接着打，不回主页重走入口（重进等于从第 1 层重来，白扔一次）。
+    """
+    dev.screen(True)
+    if _on_adventure(dev) or on_gate_page(dev):
+        return False
+    if is_route_page(dev):
         return True
-    if any(_in_slot(dev, "maze_clear", cx, cy, 0.6) for cx, cy in ROOM_SLOTS):
-        return True
-    return False
+    for name in ("maze_jiahu_title", "maze_win", "maze_partner_title", "maze_gift_title"):
+        if _has(dev, name):
+            return True
+    return _room_close(dev) is not None
 
 
 def reroll_gate(dev: Device, difficulty: str, floor: int = 1) -> bool:
@@ -324,9 +403,43 @@ def _label(key: str | None) -> str:
     return KING_LABEL.get(key, key) if key else "未知"
 
 
+def _enter_first_door(dev: Device, rerolls: int, difficulty: str, floor: int) -> bool:
+    """目标=任意：挨个门点，弹出确认框就确定，不认王也不重刷。"""
+    for attempt in range(1, max(2, rerolls) + 1):
+        dev.check_cancel()
+        page = _wait_page(dev, 20 if attempt == 1 else 8)
+        if page == "route":
+            dev.log.info("  已在路线页，视为已进入本层")
+            return True
+        if page != "gate":
+            dev.log.info("  不在三扇门页，重走迷宫入口")
+            if not reroll_gate(dev, difficulty, floor):
+                dev.log.warning("  回不到三扇门页，先不打了")
+                return False
+            continue
+        for i, gx in enumerate(GATE_X):
+            dev.check_cancel()
+            _tap(dev, gx, GATE_Y, settle=1.6)
+            ok = _find(dev, "maze_btn_ok", 0.9)
+            if ok is None:
+                dev.log.info(f"  第{i+1}扇门没弹确认框，换下一扇")
+                continue
+            king = _door_king(dev)
+            dev.log.info(f"  第{i+1}扇门=[{_label(king)}]（任意）→ 确定")
+            dev.tap(ok.cx, ok.cy)
+            dev.wait_stable(timeout=2.5)
+            return True
+        dev.log.warning("  三扇门都点不开，重刷")
+        if not reroll_gate(dev, difficulty, floor):
+            return False
+    return False
+
+
 def find_target_gate(dev: Device, target: str, rerolls: int,
                      difficulty: str = "hard", floor: int = 1) -> bool:
     """在当前三扇门页找目标王并点确定进入本层。找不到重刷，超上限返回 False。"""
+    if target == "any":
+        return _enter_first_door(dev, rerolls, difficulty, floor)
     tpl = KING_TPL[target]
     if not dev.matcher.has(tpl):
         raise NotFound(f"目标[{KING_LABEL[target]}]的模板 {tpl} 不存在")
@@ -335,11 +448,17 @@ def find_target_gate(dev: Device, target: str, rerolls: int,
     same_rounds = 0
     for attempt in range(1, rerolls + 1):
         dev.check_cancel()
-        if is_route_page(dev):
+        page = _wait_page(dev, 20 if attempt == 1 else 8)
+        if page == "route":
             dev.log.info("  已在路线页，视为已进入本层")
             return True
-        if not on_gate_page(dev):
-            # 既不在门页也不在路线页（点歪/弹窗没关掉）→ 重走入口，别当成已进层
+        if page != "gate":
+            page = _wait_page(dev, 15)      # 加载慢时再来一次，别一次就退迷宫
+            if page == "route":
+                dev.log.info("  已在路线页，视为已进入本层")
+                return True
+        if page != "gate":
+            # 等过了还既不在门页也不在路线页（点歪/弹窗没关掉）→ 重走入口
             dev.log.info("  不在三扇门页，重走迷宫入口")
             if not reroll_gate(dev, difficulty, floor):
                 # 回不去门页就不硬来，交给调用方按「没刷到」跳过，别把进度搞乱
@@ -449,30 +568,69 @@ def _in_roi(dev: Device, name: str, roi_box: tuple[int, int, int, int],
     return float(cv2.matchTemplate(roi, tpl, cv2.TM_CCOEFF_NORMED).max()) >= th
 
 
-def _in_slot(dev: Device, name: str, cx: int, cy: int, th: float) -> bool:
-    x1, y1 = _xy(dev, cx - 210, cy - 160)
-    x2, y2 = _xy(dev, cx + 210, cy + 160)
-    return _in_roi(dev, name, (x1, y1, x2, y2), th)
+ROOM_SCALES = tuple(round(0.85 + 0.05 * i, 2) for i in range(7))   # 0.85 ~ 1.15
 
 
-def scan_rooms(dev: Device) -> dict:
-    """实时扫描路线页每个槽位状态。返回 {idx: {'clear':bool,'person':bool,'boss':bool}}。"""
+def _match_all(dev: Device, name: str, th: float, per: int = 6,
+               quiet: bool = True) -> list[tuple[float, float, int, int]]:
+    """多尺度找模板的所有命中：[(分数, 缩放, cx, cy)]，按位置去重。
+
+    房间卡片的大小会随本层房间数变（5 间那层比 6 间画得大约 25%），单尺度匹配
+    经常整层认不出来（实测 maze_boss_room 在 5 间那层全图最高只有 0.6，
+    缩到 0.8 才有 0.78），所以必须逐尺度扫。
+    """
+    g = cv2.cvtColor(dev.screen(), cv2.COLOR_BGR2GRAY)
+    t0 = _tpl_gray(name)
+    if t0 is None:
+        return []
+    hits: list[tuple[float, float, int, int]] = []
+    for s in ROOM_SCALES:
+        t = t0 if abs(s - 1.0) < 1e-6 else cv2.resize(
+            t0, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+        if t.shape[0] > g.shape[0] or t.shape[1] > g.shape[1]:
+            continue
+        r = cv2.matchTemplate(g, t, cv2.TM_CCOEFF_NORMED)
+        rr = r.copy()
+        for _ in range(per):
+            _, mx, _, ml = cv2.minMaxLoc(rr)
+            if mx < th:
+                break
+            hits.append((float(mx), float(s), ml[0] + t.shape[1] // 2, ml[1] + t.shape[0] // 2))
+            cv2.circle(rr, ml, int(max(t.shape) * 0.55), 0, -1)
+    hits.sort(reverse=True)
+    out: list[tuple[float, float, int, int]] = []
+    for h in hits:
+        if all(abs(h[2] - o[2]) > 70 or abs(h[3] - o[3]) > 70 for o in out):
+            out.append(h)
+    return out
+
+
+def scan_rooms(dev: Device, quiet: bool = False) -> list[dict]:
+    """扫出本层所有房间（位置、大小、数量都不固定，靠每张卡顶部的宝箱定位）。
+
+    返回 [{x, y, scale, clear, boss, person}]，x/y 是可以直接点的卡片中段坐标。
+    """
     dev.screen(True)
-    result = {}
-    for i, (cx, cy) in enumerate(ROOM_SLOTS):
-        clear = _in_slot(dev, "maze_clear", cx, cy, 0.8)
-        boss = (i == BOSS_SLOT) and _in_slot(dev, "maze_boss_room", cx, cy, 0.75)
-        person = False
-        if not boss and not clear and dev.matcher.has("maze_person_icon"):
-            # 小人图标相对房间中心偏移 (+120,-25)
-            ix1, iy1 = _xy(dev, cx + 120 - 45, cy - 25 - 50)
-            ix2, iy2 = _xy(dev, cx + 120 + 45, cy - 25 + 50)
-            person = _in_roi(dev, "maze_person_icon", (ix1, iy1, ix2, iy2), 0.8)
-        result[i] = {"clear": clear, "person": person, "boss": boss}
-    dev.log.info("  房间扫描: " + " ".join(
-        f"{'B' if result[i]['boss'] else 'P' if result[i]['person'] else '.'}"
-        f"{'✓' if result[i]['clear'] else ''}" for i in range(len(ROOM_SLOTS))))
-    return result
+    chests = _match_all(dev, "maze_chest", 0.85)
+    clears = _match_all(dev, "maze_clear", 0.90)
+    skulls = _match_all(dev, "maze_skull", 0.80)
+    persons = _match_all(dev, "maze_person_icon", 0.90)
+    rooms = []
+    for _sc, s, cx, cy in chests:
+        px, py = int(cx), int(cy + 150 * s)      # 宝箱往下 150*s 就是卡片中段
+        reach = 200 * s
+
+        def near(hits, _px=px, _py=py, _r=reach):
+            return any(abs(h[2] - _px) < _r and abs(h[3] - _py) < _r + 90 for h in hits)
+
+        rooms.append({"x": px, "y": py, "scale": s,
+                      "clear": near(clears), "boss": near(skulls), "person": near(persons)})
+    if not quiet:
+        dev.log.info("  房间扫描(%d 间): " % len(rooms) + " ".join(
+            f"({r['x']},{r['y']}){'B' if r['boss'] else 'P' if r['person'] else '.'}"
+            f"{'✓' if r['clear'] else ''}" for r in rooms))
+    return rooms
+
 
 
 # ---------------------------------------------------------------- 单房战斗
@@ -563,6 +721,7 @@ def _wait_room_done(dev: Device, timeout: float, ignore_close_for: float = 0.0) 
     """
     t0 = time.time()
     end = t0 + timeout
+    last_route_check = 0.0
     while time.time() < end:
         dev.check_cancel()
         dev.screen(True)
@@ -571,36 +730,69 @@ def _wait_room_done(dev: Device, timeout: float, ignore_close_for: float = 0.0) 
                 return name
         if time.time() - t0 >= ignore_close_for and _room_close(dev) is not None:
             return "maze_result"
+        # 已经回到路线页（有房间卡）＝这间打完了，只是结算页被跳过/没认出来。
+        # 没有这条时，窗口最小化/画面卡一下就会白等满 10 分钟（08:33 那次就是这样）。
+        # 前 3 秒不认：刚点完房间/挑战，路线页可能还没被准备页盖住。
+        if time.time() - t0 >= max(ignore_close_for, 3.0) and time.time() - last_route_check >= 2.0:
+            last_route_check = time.time()
+            if _match_all(dev, "maze_chest", 0.85, per=2):
+                return "route"
         time.sleep(POLL)
     return None
 
 
-def _pick_buff(dev: Device, buff_type: str) -> None:
-    """加护页：选指定类型的第一个。"""
-    g = cv2.cvtColor(dev.screen(), cv2.COLOR_BGR2GRAY)
-    tpls = {}
-    for k in ("physical", "magic"):
-        tpls[k] = cv2.imread(str(_tpl_path(f"maze_buff_{k}")), 0)
-    chosen = None
-    for cy in (350, 532, 714, 896):
-        x1, y1 = _xy(dev, 805, cy - 24)
-        x2, y2 = _xy(dev, 845, cy + 16)
-        roi = g[y1:y2, x1:x2]
-        if roi.shape[0] < 20:
+BUFF_ICON_X = (805, 845)        # 加护弹窗左侧图标列的 x 范围（2560×1440 基准）
+BUFF_ROW_Y = (346, 528, 710, 892)   # 4 行加护的图标中心（实测行距 182）
+
+
+def _buff_rows(dev: Device) -> list[tuple[str, int, float]]:
+    """认出加护弹窗里有哪些行、每行是哪个类型：[(kind, y, P盾分数)]。
+
+    行位置用实测的 4 行格，每格再校验「这里真有图标」（图标列上高饱和像素够多），
+    所以只有 3 行时也不会把空白当选项。
+
+    类型怎么分：原来那张 maze_buff_physical 模板是坏的（全图最高只有 0.56，纯噪声），
+    真正能认的是 P 盾：命中 = magic(免疫/抗性类)，不命中 = physical(爆击/攻击类)。
+    攻击类图标每期都不一样（白剑、火剑…），单张模板认不了，只能这样反着判。
+    """
+    img = dev.screen()
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    x1, _ = _xy(dev, BUFF_ICON_X[0], 0)
+    x2, _ = _xy(dev, BUFF_ICON_X[1], 0)
+    tpl = _tpl_gray("maze_buff_magic")
+    out = []
+    for cy_ref in BUFF_ROW_Y:
+        _, cy = _xy(dev, 0, cy_ref)
+        roi = g[max(0, cy - 20):cy + 20, x1:x2]
+        sat = hsv[max(0, cy - 20):cy + 20, x1:x2, 1]
+        if roi.shape[0] < 20 or roi.shape[1] < 20:
             continue
-        scores = {}
-        for k, t in tpls.items():
-            scores[k] = float(cv2.matchTemplate(roi, t, cv2.TM_CCOEFF_NORMED).max())
-        detected = max(scores, key=scores.get)
-        if detected == buff_type and chosen is None:
-            chosen = cy
-    if chosen is not None:
-        _tap(dev, 825, chosen, settle=1.2)
-        dev.log.info(f"  加护选[{buff_type}]第一个 y={chosen}")
-    else:
-        dev.log.warning("  加护没识别出目标类型，点第一个")
-        _tap(dev, 825, 350, settle=1.2)
-    _tap_until_gone(dev, "maze_jiahu_title", 1280, 1227)
+        if float((sat > 90).mean()) < 0.15:        # 这一行没有图标（不足 3 行时）
+            continue
+        p = 0.0
+        if tpl is not None and roi.shape[0] >= tpl.shape[0] and roi.shape[1] >= tpl.shape[1]:
+            p = float(cv2.matchTemplate(roi, tpl, cv2.TM_CCOEFF_NORMED).max())
+        out.append(("magic" if p >= 0.90 else "physical", cy, round(p, 2)))
+    return out
+
+
+def _pick_buff(dev: Device, buff_type: str) -> None:
+    """加护页：按行认类型，选指定类型的第一个。"""
+    rows = _buff_rows(dev)
+    if rows:
+        dev.log.info("  加护行: " + " / ".join(f"y{cy}:{k}" for k, cy, _ in rows))
+    pick = next((r for r in rows if r[0] == buff_type), None)
+    if pick is None:
+        if rows:
+            pick = rows[0]
+            dev.log.info(f"  这一轮没有[{buff_type}]类，选第一个 y={pick[1]}")
+        else:
+            pick = (buff_type, 346, 0.0)
+            dev.log.warning("  加护页没认出选项，按第一行的位置点")
+    _tap(dev, 825, pick[1], settle=1.2)
+    dev.log.info(f"  加护选[{pick[0]}] y={pick[1]}")
+    _tap_ok_until_gone(dev, "maze_jiahu_title")
 
 
 def _pick_partner(dev: Device) -> None:
@@ -635,7 +827,7 @@ def _pick_partner(dev: Device) -> None:
             break
     dev.log.info(f"  伙伴外框={cards} → 选 card{pick}")
     _tap(dev, centers[pick], 580, settle=1.3)
-    _tap_until_gone(dev, "maze_partner_title", 1279, 1085)
+    _tap_ok_until_gone(dev, "maze_partner_title", fallback=(1279, 1085))
 
 
 def settle_after_battle(dev: Device, buff_type: str, do_partner: bool = False) -> bool:
@@ -648,18 +840,21 @@ def settle_after_battle(dev: Device, buff_type: str, do_partner: bool = False) -
     for _ in range(8):
         dev.check_cancel()
         dev.screen(True)
-        if _has(dev, "maze_gift_title"):
-            _tap_until_gone(dev, "maze_gift_title", 1280, 1253, tries=3)
-            continue
+        # 先认**能区分**的页：maze_jiahu_title 原来是「通用绿标题栏」的左半截，
+        # 伙伴页也能 0.998 命中，于是伙伴页被当成加护页，一直点空。
+        # 现在 jiahu 模板换成了标题文字区（加护页 1.000 / 伙伴页 0.589），伙伴先判更稳
         if _has(dev, "maze_win"):
             _tap_until_gone(dev, "maze_win", 2205, 1275, tries=3)
-            continue
-        if _has(dev, "maze_jiahu_title"):
-            _pick_buff(dev, buff_type)
             continue
         if _has(dev, "maze_partner_title"):
             # 伙伴只会出现在小人房，但认到就选，不然页面关不掉
             _pick_partner(dev)
+            continue
+        if _has(dev, "maze_jiahu_title"):
+            _pick_buff(dev, buff_type)
+            continue
+        if _has(dev, "maze_gift_title"):
+            _tap_ok_until_gone(dev, "maze_gift_title", tries=3, fallback=(1280, 1253))
             continue
         if close_room_result(dev, rounds=1):
             continue
@@ -670,9 +865,9 @@ def settle_after_battle(dev: Device, buff_type: str, do_partner: bool = False) -
 
 def fight_room(dev: Device, cx: int, cy: int, buff_type: str,
                do_partner: bool = False) -> bool:
-    """打一个房间。返回是否成功打完（结算出现）。"""
+    """打一个房间（cx,cy 是扫出来的绝对像素）。返回是否成功打完。"""
     dev.check_cancel()
-    _tap(dev, cx, cy, settle=2.2)
+    _tap_abs(dev, cx, cy, settle=2.2)
     # 准备页：扫荡可点就扫荡（扫荡也会出加护/结算页）
     if _sweep_available(dev):
         dev.log.info("  扫荡可点 → 使用扫荡券")
@@ -696,57 +891,66 @@ def fight_room(dev: Device, cx: int, cy: int, buff_type: str,
     return True
 
 
-def _confirm_clear(dev: Device, idx: int, timeout: float = 10.0) -> bool:
-    """等这间房变成 CLEAR（关掉结算页后回路线页有转场，给几秒）。"""
-    cx, cy = ROOM_SLOTS[idx]
+def _confirm_clear(dev: Device, x: int, y: int, timeout: float = 12.0) -> bool:
+    """等这间房变成 CLEAR（关掉结算页后回路线页有转场，给几秒）。
+
+    房间位置是扫出来的，所以按「离点击点最近的那间」判断，不再按固定槽位。
+    """
     end = time.time() + timeout
     while time.time() < end:
         dev.check_cancel()
         dev.screen(True)
         close_room_result(dev, rounds=1)      # 结算页还没关就顺手关掉
-        if _in_slot(dev, "maze_clear", cx, cy, 0.8):
+        rooms = scan_rooms(dev, quiet=True)
+        near = [r for r in rooms if abs(r["x"] - x) < 130 and abs(r["y"] - y) < 130]
+        if near and near[0]["clear"]:
             return True
-        time.sleep(0.5)
+        time.sleep(0.6)
     return False
 
 
 # ---------------------------------------------------------------- 打一层
 def play_floor(dev: Device, buff_type: str) -> bool:
-    """打完当前层的所有房间。返回是否成功。"""
-    tried: set[int] = set()          # 打完也没 CLEAR 的房间，不再反复点
-    for _ in range(24):              # 每层最多 6 房，留余量防死循环
+    """打完当前层的所有房间。返回是否成功。
+
+    房间是从画面上扫出来的（数量、位置、大小都不固定），所以不用槽位下标，
+    直接拿扫到的坐标点卡片中间。
+    """
+    tried: set[tuple[int, int]] = set()      # 打完也没 CLEAR 的房间，不再反复点
+    for _ in range(24):                      # 每层最多 6 房，留余量防死循环
         dev.check_cancel()
         settle_after_battle(dev, buff_type)   # 上一步的结算页/加护没关干净先关掉
+        dev.wait_stable(timeout=1.5)
         rooms = scan_rooms(dev)
-        # 未打完的房
-        pending = [i for i, s in rooms.items() if not s["clear"]]
+        if not rooms:
+            dev.dump("maze_no_room")
+            dev.log.warning("  路线页上没认出任何房间（模板/缩放对不上？）")
+            return False
+        pending = [r for r in rooms if not r["clear"]]
         if not pending:
             dev.log.info("  本层全部房间 CLEAR")
             return True
-        # 分类：普通房 / 小人房 / BOSS
-        person_rooms = [i for i in pending if rooms[i]["person"]]
-        boss_rooms = [i for i in pending if rooms[i]["boss"]]
-        normal_rooms = [i for i in pending
-                        if i not in person_rooms and i not in boss_rooms]
-        # 顺序：普通房 → 小人房 → BOSS
-        order = [i for i in (normal_rooms + person_rooms + boss_rooms)
-                 if i not in tried]
+        # 分类：普通房 / 小人房 / 带骷髅的（＝还没打的，BOSS 一般也在里面）
+        person = [r for r in pending if r["person"]]
+        boss = [r for r in pending if r["boss"]]
+        normal = [r for r in pending
+                  if (r["x"], r["y"]) not in {(p["x"], p["y"]) for p in person}
+                  and (r["x"], r["y"]) not in {(b["x"], b["y"]) for b in boss}]
+        # 顺序：普通房 → 小人房 → 骷髅房（BOSS 最后）
+        order = [r for r in normal + person + boss if (r["x"], r["y"]) not in tried]
         if not order:
             dev.dump("maze_floor_stuck")
-            dev.log.warning(f"  slot{pending} 打了也不 CLEAR，先停手（现场在 logs/fails）")
+            dev.log.warning(f"  {len(pending)} 间打了也不 CLEAR，先停手（现场在 logs/fails）")
             return False
-        idx = order[0]
-        is_person = idx in person_rooms
-        is_boss = idx in boss_rooms
-        cx, cy = ROOM_SLOTS[idx]
-        dev.log.info(f"  打房间 slot{idx} @({cx},{cy})"
-                     f"{' [小人房]' if is_person else ''}{' [BOSS]' if is_boss else ''}")
-        ok = fight_room(dev, cx, cy, buff_type, do_partner=is_person)
-        if not ok:
+        r = order[0]
+        dev.log.info(f"  打房间 @({r['x']},{r['y']})"
+                     f"{' [小人房]' if r['person'] else ''}"
+                     f"{' [骷髅]' if r['boss'] else ''}")
+        if not fight_room(dev, r["x"], r["y"], buff_type, do_partner=bool(r["person"])):
             return False
-        if not _confirm_clear(dev, idx):
-            dev.log.warning(f"  slot{idx} 打完了还是没 CLEAR，先换下一间")
-            tried.add(idx)
+        if not _confirm_clear(dev, r["x"], r["y"]):
+            dev.log.warning("  这间打完还是没 CLEAR，先换下一间")
+            tried.add((r["x"], r["y"]))
     dev.log.warning("  本层打了超过 24 房，可能卡住")
     return False
 
@@ -779,6 +983,8 @@ def job_labyrinth(dev: Device, opts: dict | None = None) -> None:
         return
 
     target = (opts.get("kings") or ["qishi"])[0]
+    if target != "any" and target not in KING_TPL:
+        target = "qishi"
     diffs = opts.get("diffs") or ["hard"]
     difficulty = diffs[0] if diffs[0] in ("hard", "normal") else "hard"
     buff_type = (opts.get("buffs") or ["physical"])[0]
@@ -794,29 +1000,51 @@ def job_labyrinth(dev: Device, opts: dict | None = None) -> None:
                  f"{'Hard(5层)' if difficulty == 'hard' else 'Normal(3层)'}，"
                  f"加护[{buff_type}]，每层重刷上限{rerolls}")
 
-    enter_labyrinth(dev, difficulty)
+    # 续打：上次跑到一半断了、或手动打了一半停在加护/结算/门页，再点任务不该回主页
+    # 重走入口 —— 重进虽然进度还在，但每次都要重走四步选难度，纯浪费时间。
+    page0 = _wait_page(dev, 2.5)
+    if page0 == "gate":
+        start = "gate"
+        dev.log.info("  已经站在三扇门页，直接开始选门")
+    elif in_maze(dev):
+        start = "floor"
+        dev.log.info("  已经在大迷宫里面，从当前层接着打（不回主页重进）")
+    else:
+        start = "home"
+        enter_labyrinth(dev, difficulty)
 
-    for floor in range(1, max_floors + 1):
+    # 从门页续打时不知道现在第几层，多留一轮（没「前往下层」时循环自己会 break）
+    for floor in range(1, max_floors + (1 if start == "gate" else 0) + 1):
         dev.check_cancel()
-        dev.log.info(f"  ── 第 {floor}/{max_floors} 层 ──")
+        run_floor = floor
+        dev.log.info(f"  ── 第 {floor}/{max_floors} 层"
+                     f"{'（续打）' if start == 'floor' and floor == 1 else ''} ──")
         if floor > 1:
-            # 上一层全清 → 点「前往下层」回三扇门页
-            if not _tap_until_gone(dev, "maze_clear", 1274, 1070, tries=3):
-                dev.log.warning("  没找到[前往下层]，尝试继续")
-            dev.wait_stable(timeout=2)
-        # 三扇门页找目标王并进入
-        entered = find_target_gate(dev, target, rerolls, difficulty, floor)
-        if not entered:
-            dev.notify(f"迷宫：第{floor}层重刷{rerolls}次没刷到"
-                       f"[{KING_LABEL.get(target, target)}]，跳过（可从当前继续）")
-            raise Skipped(f"第{floor}层没刷到[{KING_LABEL.get(target, target)}]")
+            # 上一层全清 → **手动**点「前往下层」回三扇门页（游戏不会自动进层），
+            # 点完有加载过场，等门页真的出来再继续
+            if _tap_until_gone(dev, "maze_clear", 1274, 1070, tries=3):
+                _wait_page(dev, 25)
+            elif _wait_page(dev, 20) == "route":
+                dev.log.info("  没有[前往下层]了，迷宫已经到头")
+                break
+            else:
+                dev.log.warning("  没找到[前往下层]，继续往下走")
+        if start == "floor" and floor == 1:
+            # 已经在本层里面了，别去找三扇门（找不到会把进度退掉）
+            dev.log.info("  续打：跳过选门，直接打当前层")
+        else:
+            entered = find_target_gate(dev, target, rerolls, difficulty, run_floor)
+            if not entered:
+                dev.notify(f"迷宫：第{floor}层重刷{rerolls}次没刷到"
+                           f"[{KING_LABEL.get(target, target)}]，跳过（可从当前继续）")
+                raise Skipped(f"第{floor}层没刷到[{KING_LABEL.get(target, target)}]")
         # 打本层所有房间
         if not play_floor(dev, buff_type):
             dev.notify(f"迷宫：第{floor}层打房失败，请看一眼现场")
             raise NotFound(f"第{floor}层打房卡住")
         dev.log.info(f"  ✓ 第 {floor} 层完成")
 
-    # 最后一层 BOSS 打完 → 回冒险页 → 点首页
+    # 最后一层打完（没有[前往下层]）→ 回冒险页 → 点首页
     dev.wait_stable(timeout=3)
     if _has(dev, "tab_adventure", 0.85):
         dev.log.info("  通关，回到冒险页")
