@@ -19,6 +19,8 @@
     </div>
   </div>
   <div class="status">
+    <button id="btnDonate" class="donate-btn" title="觉得好用？请作者喝杯奶茶">☕ 赞赏作者</button>
+    <span class="sep">·</span>
     <span class="dot" id="dot"></span>
     <span id="connText">连接中…</span>
     <span class="sep">·</span>
@@ -162,6 +164,33 @@
       <button class="btn ghost" id="updPage" hidden>打开发布页</button>
       <span class="grow"></span>
       <button class="btn primary" id="updApply" hidden>立即更新</button>
+    </div>
+  </div>
+</div>
+
+<div id="donateDlg" class="dlg" hidden>
+  <div class="dlg-box donate-box">
+    <div class="dlg-head">
+      <span>赞赏作者</span>
+      <button class="del" id="donateClose" title="关闭">×</button>
+    </div>
+    <div class="dlg-hint">
+      这助手是拿下班时间一点点磨出来的，觉得省事就请作者喝杯奶茶 ☕<br>
+      纯自愿 —— 不打赏也照样全功能、照样跟着游戏更新。
+    </div>
+    <div class="donate-grid">
+      <figure>
+        <img src="/static/donate/wechat.png" alt="微信赞赏码">
+        <figcaption>💚 微信</figcaption>
+      </figure>
+      <figure>
+        <img src="/static/donate/alipay.png" alt="支付宝赞赏码">
+        <figcaption>💙 支付宝</figcaption>
+      </figure>
+    </div>
+    <div class="dlg-foot">
+      <span class="grow"></span>
+      <button class="btn ghost" id="donateOk">以后再说</button>
     </div>
   </div>
 </div>

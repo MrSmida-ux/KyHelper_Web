@@ -1129,6 +1129,10 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); $('updDlg').hidden = true; }
     return;
   }
+  if (!$('donateDlg').hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); $('donateDlg').hidden = true; }
+    return;
+  }
   if (e.key === 'Escape' && S.running) $('btnStop').click();
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('btnRun').click();
 });
@@ -1317,6 +1321,12 @@ $('updPage').onclick = () => {
   const u = S.update || {};
   if (u.url) window.open(u.url, '_blank');
 };
+
+// 赞赏：两张码（微信 / 支付宝）都放在 web/donate/ 里，纯静态，不经过后端
+$('btnDonate').onclick = () => { $('donateDlg').hidden = false; };
+$('donateClose').onclick = () => { $('donateDlg').hidden = true; };
+$('donateOk').onclick = () => { $('donateDlg').hidden = true; };
+$('donateDlg').onclick = (e) => { if (e.target === $('donateDlg')) $('donateDlg').hidden = true; };
 
 // ---------------------------------------------------------------- 启动
 // ?once=1 只取一次画面，用于截图和静态预览（持续轮询会让无头浏览器永远不空闲）
