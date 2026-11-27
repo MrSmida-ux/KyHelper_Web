@@ -569,9 +569,13 @@ def _in_roi(dev: Device, name: str, roi_box: tuple[int, int, int, int],
 
 
 ROOM_SCALES = tuple(round(0.85 + 0.05 * i, 2) for i in range(7))   # 0.85 ~ 1.15
+# BOSS 房卡片比普通房高一截，且「5 间那层」比「6 间那层」整卡再大 ~20%，
+# 所以单独给一套更宽的尺度（实测 6 间那层 1.00 命中 1.000，5 间那层约 1.2）
+BOSS_SCALES = tuple(round(0.75 + 0.05 * i, 2) for i in range(11))  # 0.75 ~ 1.25
 
 
 def _match_all(dev: Device, name: str, th: float, per: int = 6,
+               scales: tuple[float, ...] | None = None,
                quiet: bool = True) -> list[tuple[float, float, int, int]]:
     """多尺度找模板的所有命中：[(分数, 缩放, cx, cy)]，按位置去重。
 
@@ -584,7 +588,7 @@ def _match_all(dev: Device, name: str, th: float, per: int = 6,
     if t0 is None:
         return []
     hits: list[tuple[float, float, int, int]] = []
-    for s in ROOM_SCALES:
+    for s in (scales or ROOM_SCALES):
         t = t0 if abs(s - 1.0) < 1e-6 else cv2.resize(
             t0, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
         if t.shape[0] > g.shape[0] or t.shape[1] > g.shape[1]:
@@ -609,12 +613,18 @@ def scan_rooms(dev: Device, quiet: bool = False) -> list[dict]:
     """扫出本层所有房间（位置、大小、数量都不固定，靠每张卡顶部的宝箱定位）。
 
     返回 [{x, y, scale, clear, boss, person}]，x/y 是可以直接点的卡片中段坐标。
+
+    **BOSS 房没有宝箱**：最后一层的「王之间」整张卡就没有宝箱，卡面是红色大 X +
+    骷髅 + BOSS 字样。只按宝箱找的话这间永远扫不出来，于是前面 5 间一 CLEAR 就
+    当成「本层打完」，BOSS 一次都没打（11-27 08:45 的实战就是这么漏的）。
+    所以再按 maze_boss_card 单独补一遍「没宝箱的卡」。
     """
     dev.screen(True)
     chests = _match_all(dev, "maze_chest", 0.85)
     clears = _match_all(dev, "maze_clear", 0.90)
     skulls = _match_all(dev, "maze_skull", 0.80)
     persons = _match_all(dev, "maze_person_icon", 0.90)
+    boss_cards = _match_all(dev, "maze_boss_card", 0.75, scales=BOSS_SCALES)
     rooms = []
     for _sc, s, cx, cy in chests:
         px, py = int(cx), int(cy + 150 * s)      # 宝箱往下 150*s 就是卡片中段
@@ -625,11 +635,19 @@ def scan_rooms(dev: Device, quiet: bool = False) -> list[dict]:
 
         rooms.append({"x": px, "y": py, "scale": s,
                       "clear": near(clears), "boss": near(skulls), "person": near(persons)})
+    for _sc, s, cx, cy in boss_cards:
+        # 已经按宝箱识别到的卡（同一个位置）不重复加
+        if any(abs(r["x"] - cx) < 300 * s and abs(r["y"] - cy) < 300 * s for r in rooms):
+            continue
+        near_clear = any(abs(h[2] - cx) < 260 * s and abs(h[3] - cy) < 260 * s for h in clears)
+        rooms.append({"x": int(cx), "y": int(cy), "scale": s,
+                      "clear": near_clear, "boss": True, "person": False})
     if not quiet:
         dev.log.info("  房间扫描(%d 间): " % len(rooms) + " ".join(
             f"({r['x']},{r['y']}){'B' if r['boss'] else 'P' if r['person'] else '.'}"
             f"{'✓' if r['clear'] else ''}" for r in rooms))
     return rooms
+
 
 
 
@@ -901,12 +919,24 @@ def _confirm_clear(dev: Device, x: int, y: int, timeout: float = 12.0) -> bool:
         dev.check_cancel()
         dev.screen(True)
         close_room_result(dev, rounds=1)      # 结算页还没关就顺手关掉
+        if _on_adventure(dev):                # 最后一层 BOSS 打完 → 直接被丢回冒险页
+            dev.log.info("  已经回到冒险页（迷宫结束），不用等 CLEAR 了")
+            return True
         rooms = scan_rooms(dev, quiet=True)
         near = [r for r in rooms if abs(r["x"] - x) < 130 and abs(r["y"] - y) < 130]
         if near and near[0]["clear"]:
             return True
         time.sleep(0.6)
     return False
+
+
+def _on_adventure(dev: Device) -> bool:
+    """是不是站在冒险页。
+
+    打完最后一层的 BOSS，游戏不会给「前往下层」，而是直接结束迷宫、把人丢回冒险页
+    （11-27 09:06 那次就是这样：BOSS 明明打掉了，却被判成「打房失败」）。
+    """
+    return _has(dev, "tab_adventure", 0.85)
 
 
 # ---------------------------------------------------------------- 打一层
@@ -923,6 +953,11 @@ def play_floor(dev: Device, buff_type: str) -> bool:
         dev.wait_stable(timeout=1.5)
         rooms = scan_rooms(dev)
         if not rooms:
+            # 打完最后一层的 BOSS，游戏会直接结束迷宫把人丢回冒险页（没有「前往下层」，
+            # 也没有 CLEAR 可以等）。以前这里当成「认不出房间 → 失败」，白报一次失败。
+            if _on_adventure(dev):
+                dev.log.info("  已经回到冒险页 —— 最后一层 BOSS 打完，迷宫结束")
+                return True
             dev.dump("maze_no_room")
             dev.log.warning("  路线页上没认出任何房间（模板/缩放对不上？）")
             return False
@@ -1019,17 +1054,27 @@ def job_labyrinth(dev: Device, opts: dict | None = None) -> None:
         run_floor = floor
         dev.log.info(f"  ── 第 {floor}/{max_floors} 层"
                      f"{'（续打）' if start == 'floor' and floor == 1 else ''} ──")
+        same_floor = start == "floor" and floor == 1
         if floor > 1:
             # 上一层全清 → **手动**点「前往下层」回三扇门页（游戏不会自动进层），
             # 点完有加载过场，等门页真的出来再继续
             if _tap_until_gone(dev, "maze_clear", 1274, 1070, tries=3):
                 _wait_page(dev, 25)
             elif _wait_page(dev, 20) == "route":
-                dev.log.info("  没有[前往下层]了，迷宫已经到头")
-                break
+                # 「没有前往下层」≠ 迷宫通关：BOSS 房没打同样不会出现这个按钮。
+                # 11-27 08:45 就是这么在 5F 把王之间整间漏掉、直接回主页的 ——
+                # 先确认本层真的没有未 CLEAR 的房间，再放行。
+                left = [r for r in scan_rooms(dev, quiet=True) if not r["clear"]]
+                if left:
+                    dev.log.warning(f"  没有[前往下层]，但本层还剩 {len(left)} 间没 CLEAR，"
+                                    f"先补打（不退出迷宫）")
+                    same_floor = True
+                else:
+                    dev.log.info("  没有[前往下层]了，迷宫已经到头")
+                    break
             else:
                 dev.log.warning("  没找到[前往下层]，继续往下走")
-        if start == "floor" and floor == 1:
+        if same_floor:
             # 已经在本层里面了，别去找三扇门（找不到会把进度退掉）
             dev.log.info("  续打：跳过选门，直接打当前层")
         else:
@@ -1043,6 +1088,11 @@ def job_labyrinth(dev: Device, opts: dict | None = None) -> None:
             dev.notify(f"迷宫：第{floor}层打房失败，请看一眼现场")
             raise NotFound(f"第{floor}层打房卡住")
         dev.log.info(f"  ✓ 第 {floor} 层完成")
+        # 迷宫结束（最后一层 BOSS 打完 / 已经把我们丢回冒险页）：
+        # 千万别再去找「前往下层」—— 那会对着冒险页上 (1274,1070) 的关卡图标乱点。
+        if _on_adventure(dev):
+            dev.log.info("  迷宫已结束（回到冒险页），不再找下一层")
+            break
 
     # 最后一层打完（没有[前往下层]）→ 回冒险页 → 点首页
     dev.wait_stable(timeout=3)
