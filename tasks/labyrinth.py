@@ -16,8 +16,10 @@
    - 房间槽位固定 6 个，但**小人房的数量和位置每层随机**，必须实时扫描
    - CLEAR 标记 = 已打完，跳过
    - 先打普通骷髅房，小人房最后打（打完弹伙伴選択），BOSS 最后打
-4. 单房：点房→挑战准备页（扫荡可点就扫荡，灰色就挑战）→编队页挑战→
-   战斗（时长不固定，轮询等待）→礼物确认→Win关闭→可能加护（概率出现）
+4. 单房：点房→挑战准备页（扫荡亮就扫荡，灰就挑战）→编队页挑战→战斗（时长
+   不固定，轮询等待）→结算链。**结算页（队伍站在场景里、右下角[关闭]）一定会
+   出现，但礼物/Win/加护/伙伴是随机叠加的**，顺序也不固定，所以要一轮轮扫到
+   页面干净为止，不能只按固定顺序 if 一遍。
 5. 加护页：选指定类型（魔法/物理）的第一个，识别卡片中心图标
 6. 伙伴選択（小人房打完）：看卡片外框颜色，金>紫>蓝，认不准默认第一个
 7. 本层全 CLEAR→点「前往下层」→回三扇门页→重刷目标王→下一层
@@ -474,12 +476,103 @@ def scan_rooms(dev: Device) -> dict:
 
 
 # ---------------------------------------------------------------- 单房战斗
+# 房间结算页右下角[关闭]（基准 2560×1440）。这个按钮就是召唤结果页那个
+# btn_summon_close —— 07:56:38 的日志里 ensure_home 正好在这个页面命中它 @(2210,1271)。
+ROOM_CLOSE_ZONE = (1960, 1150, 580, 280)
+ROOM_TITLES = ("maze_gift_title", "maze_win", "maze_jiahu_title", "maze_partner_title")
+
+
 def _sweep_available(dev: Device) -> bool:
-    """扫荡按钮是否可点（亮色）。区域 S均值>80 或高饱和占比>0.4。"""
+    """扫荡按钮是否可点（亮橙）。
+
+    旧判据只看饱和度均值 —— 深红/火光的背景全都过 80（实测加护页 S=108、
+    高饱和占比 0.69），于是把结算页/加护页当成准备页，连点 20 次扫荡坐标
+    （07:55 那次就是这么卡住的）。现在：
+      1. 结算页/加护页/礼物/Win 直接排除（那些页面上的按钮不是扫荡）
+      2. 优先看「又亮又饱和」的橙色像素占比（同页实测 0.007 → 0）
+      3. 老判据留作兜底（扫荡券偏暗时），但已排除上面那些页面
+    """
+    if _room_close(dev) is not None:
+        return False
+    for name in ROOM_TITLES:
+        if _has(dev, name):
+            return False
     x1, y1 = _xy(dev, 1850, 965)
     x2, y2 = _xy(dev, 2280, 1050)
     hsv = cv2.cvtColor(dev.screen()[y1:y2, x1:x2], cv2.COLOR_BGR2HSV)
-    return float(hsv[:, :, 1].mean()) > 80 or float(np.mean(hsv[:, :, 1] > 60)) > 0.4
+    s, v = hsv[:, :, 1], hsv[:, :, 2]
+    if float(((s > 90) & (v > 150)).mean()) > 0.15:
+        return True
+    return float(s.mean()) > 80 or float(np.mean(s > 60)) > 0.4
+
+
+def _room_close(dev: Device):
+    """在右下角找房间结算页的[关闭]。返回 (分数, x, y) 或 None。
+
+    只在这一小块里找，避免跟别的橙色按钮（扫荡/挑战/确定）撞。用 cv2 直接匹配，
+    不走 dev.find —— 它带全图回退，会跑到别的角落乱点。
+    """
+    x, y, w, h = ROOM_CLOSE_ZONE
+    x1, y1 = _xy(dev, x, y)
+    x2, y2 = _xy(dev, x + w, y + h)
+    gray = cv2.cvtColor(dev.screen(), cv2.COLOR_BGR2GRAY)
+    roi = gray[max(0, y1):y2, max(0, x1):x2]
+    for name, th in (("btn_summon_close", 0.90), ("yice_close_word", 0.82)):
+        if not dev.matcher.has(name):
+            continue
+        tpl = _tpl_gray(name)
+        if tpl is None:
+            continue
+        if roi.shape[0] < tpl.shape[0] or roi.shape[1] < tpl.shape[1]:
+            continue
+        res = cv2.matchTemplate(roi, tpl, cv2.TM_CCOEFF_NORMED)
+        _, score, _, loc = cv2.minMaxLoc(res)
+        if score >= th:
+            th_, tw_ = tpl.shape[:2]
+            return score, x1 + loc[0] + tw_ // 2, y1 + loc[1] + th_ // 2
+    return None
+
+
+def close_room_result(dev: Device, rounds: int = 2) -> bool:
+    """点掉房间结算页的[关闭]。
+
+    **不是每个房间都有礼物/Win 结算奖励**，但打完一定停在这个页面（队伍站场景里、
+    右下角一个[关闭]）。不点掉它，下一轮扫描就全是「未 CLEAR」，会对着同一间房
+    反复点（07:55 那次连点 20 次就是没关这个页）。
+    """
+    closed = False
+    for _ in range(max(1, rounds)):
+        dev.check_cancel()
+        dev.screen(True)
+        hit = _room_close(dev)
+        if hit is None:
+            break
+        score, cx, cy = hit
+        dev.log.info(f"  关掉房间结算 @({cx},{cy}) {score:.2f}")
+        dev.tap(cx, cy)
+        dev.wait_stable(timeout=2.0)
+        closed = True
+    return closed
+
+
+def _wait_room_done(dev: Device, timeout: float, ignore_close_for: float = 0.0) -> str | None:
+    """等房间打完：礼物 / Win / 加护 / 伙伴 / 只有一个[关闭]结算页，谁先来算谁。
+
+    ignore_close_for：刚进战斗的前几秒不认「只有[关闭]」这一条 —— 战斗界面右下角
+    万一也有个橙色按钮，别被它当成打完了（礼物/Win/加护这些信号照常认）。
+    """
+    t0 = time.time()
+    end = t0 + timeout
+    while time.time() < end:
+        dev.check_cancel()
+        dev.screen(True)
+        for name in ROOM_TITLES:
+            if _has(dev, name):
+                return name
+        if time.time() - t0 >= ignore_close_for and _room_close(dev) is not None:
+            return "maze_result"
+        time.sleep(POLL)
+    return None
 
 
 def _pick_buff(dev: Device, buff_type: str) -> None:
@@ -545,20 +638,34 @@ def _pick_partner(dev: Device) -> None:
     _tap_until_gone(dev, "maze_partner_title", 1279, 1085)
 
 
-def settle_after_battle(dev: Device, buff_type: str, do_partner: bool = False) -> None:
-    """战斗结束后的结算链：礼物→Win→加护→伙伴。全程可中断。"""
-    # 礼物
-    if _has(dev, "maze_gift_title"):
-        _tap_until_gone(dev, "maze_gift_title", 1280, 1253)
-    # Win
-    if _has(dev, "maze_win"):
-        _tap_until_gone(dev, "maze_win", 2205, 1275)
-    # 加护（概率出现）
-    if _has(dev, "maze_jiahu_title"):
-        _pick_buff(dev, buff_type)
-    # 伙伴（小人房）
-    if do_partner and _has(dev, "maze_partner_title"):
-        _pick_partner(dev)
+def settle_after_battle(dev: Device, buff_type: str, do_partner: bool = False) -> bool:
+    """打完一间房的结算链，顺序不固定、也不是每个都有：
+
+        结算页[关闭] → 礼物 → Win → 加护 → 伙伴 → 再回到结算页…
+
+    所以不写成固定的 if 顺序，而是一轮轮扫，扫到页面上什么都不剩为止。
+    """
+    for _ in range(8):
+        dev.check_cancel()
+        dev.screen(True)
+        if _has(dev, "maze_gift_title"):
+            _tap_until_gone(dev, "maze_gift_title", 1280, 1253, tries=3)
+            continue
+        if _has(dev, "maze_win"):
+            _tap_until_gone(dev, "maze_win", 2205, 1275, tries=3)
+            continue
+        if _has(dev, "maze_jiahu_title"):
+            _pick_buff(dev, buff_type)
+            continue
+        if _has(dev, "maze_partner_title"):
+            # 伙伴只会出现在小人房，但认到就选，不然页面关不掉
+            _pick_partner(dev)
+            continue
+        if close_room_result(dev, rounds=1):
+            continue
+        return True
+    dev.log.warning("  结算链转了几轮还没干净，先继续下一步")
+    return False
 
 
 def fight_room(dev: Device, cx: int, cy: int, buff_type: str,
@@ -566,22 +673,21 @@ def fight_room(dev: Device, cx: int, cy: int, buff_type: str,
     """打一个房间。返回是否成功打完（结算出现）。"""
     dev.check_cancel()
     _tap(dev, cx, cy, settle=2.2)
-    # 准备页：扫荡可点就扫荡
+    # 准备页：扫荡可点就扫荡（扫荡也会出加护/结算页）
     if _sweep_available(dev):
         dev.log.info("  扫荡可点 → 使用扫荡券")
-        _tap(dev, 2065, 1007, settle=2.0)
-        # 扫荡是瞬间的，可能直接回路线页；等画面稳定
-        dev.wait_stable(timeout=3)
-        return True
+        _tap(dev, 2065, 1007, settle=1.8)
+        if _wait_room_done(dev, timeout=8.0) is not None:
+            settle_after_battle(dev, buff_type, do_partner=do_partner)
+            return True
+        dev.log.warning("  点了扫荡没反应，改走挑战")
     # 灰色 → 挑战 → 编队挑战
     _tap(dev, 2167, 1321, settle=2.0)
     time.sleep(0.8)
     _tap(dev, 2205, 1067, settle=2.5)
     # 轮询战斗结束（时长不固定，靠结算页判断）
-    st, timeout = _wait_states(
-        dev, ["maze_gift_title", "maze_win", "maze_jiahu_title", "maze_partner_title"],
-        timeout=BATTLE_TIMEOUT)
-    if timeout:
+    st = _wait_room_done(dev, BATTLE_TIMEOUT, ignore_close_for=5.0)
+    if st is None:
         dev.dump("maze_room_battle_timeout")
         dev.log.warning("  房间战斗等了 10 分钟没结束")
         return False
@@ -590,11 +696,27 @@ def fight_room(dev: Device, cx: int, cy: int, buff_type: str,
     return True
 
 
+def _confirm_clear(dev: Device, idx: int, timeout: float = 10.0) -> bool:
+    """等这间房变成 CLEAR（关掉结算页后回路线页有转场，给几秒）。"""
+    cx, cy = ROOM_SLOTS[idx]
+    end = time.time() + timeout
+    while time.time() < end:
+        dev.check_cancel()
+        dev.screen(True)
+        close_room_result(dev, rounds=1)      # 结算页还没关就顺手关掉
+        if _in_slot(dev, "maze_clear", cx, cy, 0.8):
+            return True
+        time.sleep(0.5)
+    return False
+
+
 # ---------------------------------------------------------------- 打一层
 def play_floor(dev: Device, buff_type: str) -> bool:
     """打完当前层的所有房间。返回是否成功。"""
-    for _ in range(20):  # 每层最多 6 房，留余量防死循环
+    tried: set[int] = set()          # 打完也没 CLEAR 的房间，不再反复点
+    for _ in range(24):              # 每层最多 6 房，留余量防死循环
         dev.check_cancel()
+        settle_after_battle(dev, buff_type)   # 上一步的结算页/加护没关干净先关掉
         rooms = scan_rooms(dev)
         # 未打完的房
         pending = [i for i, s in rooms.items() if not s["clear"]]
@@ -607,11 +729,12 @@ def play_floor(dev: Device, buff_type: str) -> bool:
         normal_rooms = [i for i in pending
                         if i not in person_rooms and i not in boss_rooms]
         # 顺序：普通房 → 小人房 → BOSS
-        order = normal_rooms + person_rooms + boss_rooms
+        order = [i for i in (normal_rooms + person_rooms + boss_rooms)
+                 if i not in tried]
         if not order:
-            dev.log.warning("  有待打房间但分类为空，重新扫描")
-            time.sleep(1)
-            continue
+            dev.dump("maze_floor_stuck")
+            dev.log.warning(f"  slot{pending} 打了也不 CLEAR，先停手（现场在 logs/fails）")
+            return False
         idx = order[0]
         is_person = idx in person_rooms
         is_boss = idx in boss_rooms
@@ -621,7 +744,10 @@ def play_floor(dev: Device, buff_type: str) -> bool:
         ok = fight_room(dev, cx, cy, buff_type, do_partner=is_person)
         if not ok:
             return False
-    dev.log.warning("  本层打了超过 20 房，可能卡住")
+        if not _confirm_clear(dev, idx):
+            dev.log.warning(f"  slot{idx} 打完了还是没 CLEAR，先换下一间")
+            tried.add(idx)
+    dev.log.warning("  本层打了超过 24 房，可能卡住")
     return False
 
 
