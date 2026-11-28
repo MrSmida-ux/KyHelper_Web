@@ -10,7 +10,7 @@
 - 更新：免安装版自带版本检查，面板顶栏点版本号即可下载换包重启
 - 登录：请看第三节，作者本人使用的是方式3，开战前记得选好配队，或者把最强编队放在第1页第1个位置
   
-> **不想装 Python？** 下 [**v1.2.0 免安装版**](https://github.com/MrSmida-ux/KyHelper_Web/releases/latest)
+> **不想装 Python？** 下 [**v1.2.1 免安装版**](https://github.com/MrSmida-ux/KyHelper_Web/releases/latest)
 > （Windows x64，zip 约 71 MB）：解压后双击 `KyHelper_Web.exe` 就能跑，
 > 运行时和 opencv/numpy 都打包在 `_internal/` 里，只需要本机装有 Chrome 或 Edge。
 > 想改代码或自己加模板，再按下面的源码方式跑。
@@ -327,7 +327,7 @@ python build.py --zip        # → release/KyHelper_Web/ 和 release/KyHelper_We
 ### 自动更新（`core/update.py`）
 
 面板顶栏右侧显示当前版本（就是同目录 `VERSION` 的值）。程序启动后隔几个小时
-去 GitHub 查一次最新 Release，有新版就变成 `v1.1.0 → v1.2.0` 并高亮，点它：
+去 GitHub 查一次最新 Release，有新版就变成 `v1.2.0 → v1.2.1` 并高亮，点它：
 
 1. **下载**：挑 Release 里名字带 `win` 的 zip（附件改名也能认，退到任意 zip；
    只有源码包就不提供更新）。下载中面板显示百分比，日志在 `logs/update.log`；
