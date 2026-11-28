@@ -294,8 +294,25 @@ def go_back_up(dev: Device) -> bool:
 
 
 def _on_adventure(dev: Device) -> bool:
-    """真的在冒险页：[特殊关卡] 按钮在，且没有被「特殊关卡」弹窗盖着。"""
+    """真的在冒险页：[特殊关卡] 按钮在，且没有被「特殊关卡」弹窗盖着。
+
+    这是「迷宫结束了」的唯一判据：打完最后一层的 BOSS，游戏不给「前往下层」、
+    也不一定有结算奖励，直接把人丢回冒险页（11-27 09:06、11-28 10:30 两次都是
+    这样，都被误判成「打房失败」）。
+
+    别用底部 tab 认（`tab_adventure` 在这个页面只有 0.73，怎么都过不了阈值）；
+    `maze_btn_special` 实测 0.999，是目前最稳的锚点。
+    """
     return _has(dev, "maze_btn_special", 0.85) and not _has(dev, "maze_btn_entry", 0.85)
+
+
+def _maze_over(dev: Device) -> bool:
+    """迷宫是不是已经结束（人已经在冒险页上）。
+
+    比 `_on_adventure` 宽一点：只要看见[特殊关卡]就算，不管上面有没有压着
+    「特殊关卡」弹窗 —— 打房结算时只关心「还在不在迷宫里」。
+    """
+    return _has(dev, "maze_btn_special", 0.85)
 
 
 def _back_to_adventure(dev: Device, tries: int = 4) -> bool:
@@ -753,6 +770,9 @@ def _wait_room_done(dev: Device, timeout: float, ignore_close_for: float = 0.0) 
         # 前 3 秒不认：刚点完房间/挑战，路线页可能还没被准备页盖住。
         if time.time() - t0 >= max(ignore_close_for, 3.0) and time.time() - last_route_check >= 2.0:
             last_route_check = time.time()
+            if _maze_over(dev):
+                # 最终 BOSS 打完：没有结算奖励、没有 CLEAR，直接回冒险页
+                return "adventure"
             if _match_all(dev, "maze_chest", 0.85, per=2):
                 return "route"
         time.sleep(POLL)
@@ -919,7 +939,7 @@ def _confirm_clear(dev: Device, x: int, y: int, timeout: float = 12.0) -> bool:
         dev.check_cancel()
         dev.screen(True)
         close_room_result(dev, rounds=1)      # 结算页还没关就顺手关掉
-        if _on_adventure(dev):                # 最后一层 BOSS 打完 → 直接被丢回冒险页
+        if _maze_over(dev):                   # 最后一层 BOSS 打完 → 直接被丢回冒险页
             dev.log.info("  已经回到冒险页（迷宫结束），不用等 CLEAR 了")
             return True
         rooms = scan_rooms(dev, quiet=True)
@@ -928,15 +948,6 @@ def _confirm_clear(dev: Device, x: int, y: int, timeout: float = 12.0) -> bool:
             return True
         time.sleep(0.6)
     return False
-
-
-def _on_adventure(dev: Device) -> bool:
-    """是不是站在冒险页。
-
-    打完最后一层的 BOSS，游戏不会给「前往下层」，而是直接结束迷宫、把人丢回冒险页
-    （11-27 09:06 那次就是这样：BOSS 明明打掉了，却被判成「打房失败」）。
-    """
-    return _has(dev, "tab_adventure", 0.85)
 
 
 # ---------------------------------------------------------------- 打一层
@@ -953,9 +964,20 @@ def play_floor(dev: Device, buff_type: str) -> bool:
         dev.wait_stable(timeout=1.5)
         rooms = scan_rooms(dev)
         if not rooms:
+            # 关掉结算页之后有转场，偶尔会有一两秒什么都认不出来 → 先重试再判失败。
+            for _w in range(3):
+                time.sleep(1.8)
+                dev.screen(True)
+                if _maze_over(dev):
+                    break
+                rooms = scan_rooms(dev, quiet=True)
+                if rooms:
+                    break
+        if not rooms:
             # 打完最后一层的 BOSS，游戏会直接结束迷宫把人丢回冒险页（没有「前往下层」，
-            # 也没有 CLEAR 可以等）。以前这里当成「认不出房间 → 失败」，白报一次失败。
-            if _on_adventure(dev):
+            # 也不一定有结算奖励，更没有 CLEAR 可以等）。以前这里当成「认不出房间 → 失败」，
+            # 于是明明已经通关却报一次失败（11-27 09:06、11-28 10:30 两次都是）。
+            if _maze_over(dev):
                 dev.log.info("  已经回到冒险页 —— 最后一层 BOSS 打完，迷宫结束")
                 return True
             dev.dump("maze_no_room")
@@ -1096,7 +1118,7 @@ def job_labyrinth(dev: Device, opts: dict | None = None) -> None:
 
     # 最后一层打完（没有[前往下层]）→ 回冒险页 → 点首页
     dev.wait_stable(timeout=3)
-    if _has(dev, "tab_adventure", 0.85):
+    if _maze_over(dev):
         dev.log.info("  通关，回到冒险页")
         _tap(dev, 373, 1345, settle=2.5)
     if ensure_home(dev):
