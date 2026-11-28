@@ -447,4 +447,4 @@ update:
   </tr>
 </table>
 
-<p align="center">感谢你的支持 ✨</p>
+<p align="center">感谢大家的支持 ✨</p>
